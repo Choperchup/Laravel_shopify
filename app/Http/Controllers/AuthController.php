@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
-
+use App\Http\Mail\VerifyEmail;
 
 class AuthController extends Controller
 {
