@@ -11,4 +11,5 @@ Route::get('/', [ProductController::class, 'index'])->name('home');
 Route::prefix('api')->group(function () {
     Route::get('/products', [ProductController::class, 'getProducts'])->name('api.products');
     Route::get('/shops', [ProductController::class, 'getShops'])->name('api.shops');
+    Route::get('/', [ProductController::class, 'index'])->name('products.index');
 });
