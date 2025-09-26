@@ -2,6 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\BulkUpdateProductStatusJob;
+use App\Jobs\BulkAddTagsJob;
+use App\Jobs\BulkRemoveTagsJob;
+use App\Jobs\BulkAddToCollectionJob;
+use App\Jobs\BulkRemoveFromCollectionJob;
 use App\Services\ShopifyGraphQLService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -41,11 +46,12 @@ class ProductController extends Controller
         }
 
         $perPage = (int) $request->get('per_page', 50);
-        $after = $request->get('after');
 
         if (!in_array($perPage, [50, 100, 250])) {
             $perPage = 50;
         }
+
+        $after = $request->get('after');
 
         $filters = [
             'title' => $request->get('title', ''),
@@ -60,6 +66,7 @@ class ProductController extends Controller
             'field' => $request->get('sortField', 'title'),
             'direction' => $request->get('sortDirection', 'ASC')
         ];
+
 
         $products = [];
         $pageInfo = null;
@@ -99,6 +106,7 @@ class ProductController extends Controller
             'tags' => $tags
         ]);
     }
+
 
     /**
      * API endpoint để lấy sản phẩm via AJAX
@@ -180,6 +188,90 @@ class ProductController extends Controller
                 ]
             ]
         ]);
+    }
+
+
+    /**
+     * Bulk Actions API
+     */
+    public function bulkActions(Request $request)
+    {
+        $request->validate([
+            'action' => 'required|in:active,draft,archive,add_tags,remove_tags,add_collection,remove_collection',
+            'product_ids' => 'required|array|min:1',
+            'product_ids.*' => 'string|regex:/^gid:\/\/shopify\/Product\/[0-9]+$/',
+            'tags' => 'required_if:action,add_tags,remove_tags|array|min:1',
+            'tags.*' => 'string|max:255',
+            'collection_id' => 'required_if:action,add_collection,remove_collection|string|regex:/^gid:\/\/shopify\/Collection\/[0-9]+$/'
+        ]);
+
+        $currentShopDomain = $this->getCurrentShopDomain($request);
+        $shop = $this->shopifyService->getShopByDomain($currentShopDomain);
+
+        if (!$shop) {
+            Log::error('Bulk Action Failed: Shop not found', ['domain' => $currentShopDomain]);
+            return response()->json(['success' => false, 'message' => 'Shop không tồn tại'], 404);
+        }
+
+        $productIds = $request->input('product_ids');
+        $action = $request->input('action');
+
+        Log::info('Dispatching Bulk Action', [
+            'action' => $action,
+            'shop' => $shop->name,
+            'product_count' => count($productIds)
+        ]);
+
+        try {
+            switch ($action) {
+                case 'active':
+                    $status = 'ACTIVE';
+                    BulkUpdateProductStatusJob::dispatch($shop, $productIds, $status);
+                    break;
+                case 'draft':
+                    $status = 'DRAFT';
+                    BulkUpdateProductStatusJob::dispatch($shop, $productIds, $status);
+                    break;
+                case 'archive':
+                    $status = 'ARCHIVED';
+                    BulkUpdateProductStatusJob::dispatch($shop, $productIds, $status);
+                    break;
+                case 'add_tags':
+                    $tags = array_filter($request->input('tags', []));
+                    if (empty($tags)) {
+                        return response()->json(['success' => false, 'message' => 'Tags không được rỗng'], 400);
+                    }
+                    BulkAddTagsJob::dispatch($shop, $productIds, $tags);
+                    break;
+                case 'remove_tags':
+                    $tags = array_filter($request->input('tags', []));
+                    if (empty($tags)) {
+                        return response()->json(['success' => false, 'message' => 'Tags không được rỗng'], 400);
+                    }
+                    BulkRemoveTagsJob::dispatch($shop, $productIds, $tags);
+                    break;
+                case 'add_collection':
+                    BulkAddToCollectionJob::dispatch($shop, $request->input('collection_id'), $productIds);
+                    break;
+                case 'remove_collection':
+                    BulkRemoveFromCollectionJob::dispatch($shop, $request->input('collection_id'), $productIds);
+                    break;
+                default:
+                    return response()->json(['success' => false, 'message' => 'Action không hợp lệ'], 400);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Bulk action đã được queued. Kiểm tra queue để theo dõi.'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Bulk Action Dispatch Failed', [
+                'action' => $action,
+                'shop' => $shop->name,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
     }
 
     /**

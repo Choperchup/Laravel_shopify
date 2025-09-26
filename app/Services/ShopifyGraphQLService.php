@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Jobs\BulkUpdateProductStatusJob;
 
 class ShopifyGraphQLService
 {
@@ -389,5 +390,370 @@ class ShopifyGraphQLService
     public function getShopByDomain(string $domain): ?User
     {
         return User::where('name', $domain)->first();
+    }
+
+    /**
+     * Bulk update status cho nhiều sản phẩm
+     * @param User $shop
+     * @param array $productIds - Mảng ID sản phẩm (gid://shopify/Product/...)
+     * @param string $status - ACTIVE, DRAFT, ARCHIVED
+     * @return array
+     */
+    public function bulkUpdateProductStatus(User $shop, array $productIds, string $status)
+    {
+        $results = [];
+        $batches = array_chunk($productIds, 50); // Chia thành batch 50 để tránh giới hạn API
+
+        foreach ($batches as $batch) {
+            $batchResults = [];
+            foreach ($batch as $productId) {
+                // Xây dựng input cho từng sản phẩm
+                $input = [
+                    'id' => $productId,
+                    'status' => strtoupper($status)
+                ];
+
+                // Query cho productUpdate (đột biến chuẩn của Shopify)
+                $query = '
+                    mutation productUpdate($input: ProductInput!) {
+                        productUpdate(input: $input) {
+                            product {
+                                id
+                                status
+                            }
+                            userErrors {
+                                field
+                                message
+                            }
+                        }
+                    }
+                ';
+
+                try {
+                    $response = Http::withHeaders([
+                        'X-Shopify-Access-Token' => $shop->password,
+                        'Content-Type' => 'application/json',
+                        'Accept' => 'application/json'
+                    ])->post($this->getGraphqlUrl($shop), [
+                        'query' => $query,
+                        'variables' => ['input' => $input]
+                    ]);
+
+                    if ($response->successful()) {
+                        $data = $response->json();
+                        if (isset($data['errors']) && !empty($data['errors'])) {
+                            Log::error('Update Product Status Errors', [
+                                'shop' => $shop->name,
+                                'productId' => $productId,
+                                'errors' => $data['errors']
+                            ]);
+                            $batchResults[] = ['productId' => $productId, 'success' => false, 'error' => $data['errors'] ?? 'Unknown error'];
+                            continue;
+                        }
+
+                        $userErrors = $data['data']['productUpdate']['userErrors'] ?? [];
+                        if (!empty($userErrors)) {
+                            Log::error('Update Product Status User Errors', [
+                                'shop' => $shop->name,
+                                'productId' => $productId,
+                                'errors' => $userErrors
+                            ]);
+                            $batchResults[] = ['productId' => $productId, 'success' => false, 'error' => $userErrors];
+                            continue;
+                        }
+
+                        $batchResults[] = ['productId' => $productId, 'success' => true, 'data' => $data['data']['productUpdate']['product']];
+                    } else {
+                        Log::error('Update Product Status Failed', [
+                            'shop' => $shop->name,
+                            'productId' => $productId,
+                            'status' => $response->status(),
+                            'response' => $response->body()
+                        ]);
+                        $batchResults[] = ['productId' => $productId, 'success' => false, 'error' => 'API request failed: ' . $response->body()];
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Update Product Status Exception', [
+                        'shop' => $shop->name,
+                        'productId' => $productId,
+                        'error' => $e->getMessage()
+                    ]);
+                    $batchResults[] = ['productId' => $productId, 'success' => false, 'error' => $e->getMessage()];
+                }
+
+                // Throttle để tránh rate limit (0.1 giây mỗi request)
+                usleep(100000);
+            }
+
+            $results[] = ['batch' => $batch, 'success' => !in_array(false, array_column($batchResults, 'success')), 'results' => $batchResults];
+
+            // Throttle giữa các batch (0.5 giây)
+            usleep(500000);
+        }
+
+        return ['success' => !empty($results) && !in_array(false, array_column($results, 'success')), 'results' => $results];
+    }
+
+    /**
+     * Add tags cho nhiều sản phẩm
+     * @param User $shop
+     * @param array $productIds
+     * @param array $tags
+     * @return array
+     */
+    public function bulkAddTags(User $shop, array $productIds, array $tags): array
+    {
+        $results = [];
+        foreach ($productIds as $productId) {
+            $query = $this->buildBulkTagsQuery($productId, $tags, 'add');
+            try {
+                $response = Http::withHeaders([
+                    'X-Shopify-Access-Token' => $shop->password,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ])->post($this->getGraphqlUrl($shop), [
+                    'query' => $query
+                ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    if (isset($data['errors'])) {
+                        Log::error('Bulk Add Tags Errors', ['shop' => $shop->name, 'productId' => $productId, 'errors' => $data['errors']]);
+                        $results[] = ['productId' => $productId, 'success' => false, 'error' => $data['errors']];
+                        continue;
+                    }
+                    $userErrors = $data['data']['tagsAdd']['userErrors'] ?? [];
+                    if (!empty($userErrors)) {
+                        Log::error('Bulk Add Tags User Errors', ['shop' => $shop->name, 'productId' => $productId, 'errors' => $userErrors]);
+                        $results[] = ['productId' => $productId, 'success' => false, 'error' => $userErrors];
+                        continue;
+                    }
+                    $results[] = ['productId' => $productId, 'success' => true, 'data' => $data['data']['tagsAdd']['node']];
+                } else {
+                    Log::error('Bulk Add Tags Failed', ['shop' => $shop->name, 'productId' => $productId, 'status' => $response->status()]);
+                    $results[] = ['productId' => $productId, 'success' => false, 'error' => 'API request failed'];
+                }
+            } catch (\Exception $e) {
+                Log::error('Bulk Add Tags Exception', ['shop' => $shop->name, 'productId' => $productId, 'error' => $e->getMessage()]);
+                $results[] = ['productId' => $productId, 'success' => false, 'error' => $e->getMessage()];
+            }
+
+            // Throttle để tránh rate limit
+            usleep(100000); // 0.1 giây
+        }
+
+        return ['success' => !empty($results) && !in_array(false, array_column($results, 'success')), 'results' => $results];
+    }
+
+    /**
+     * Remove tags cho nhiều sản phẩm
+     * @param User $shop
+     * @param array $productIds
+     * @param array $tags
+     * @return array
+     */
+    public function bulkRemoveTags(User $shop, array $productIds, array $tags): array
+    {
+        $results = [];
+        foreach ($productIds as $productId) {
+            $query = $this->buildBulkTagsQuery($productId, $tags, 'remove');
+            try {
+                $response = Http::withHeaders([
+                    'X-Shopify-Access-Token' => $shop->password,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ])->post($this->getGraphqlUrl($shop), [
+                    'query' => $query
+                ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    if (isset($data['errors'])) {
+                        Log::error('Bulk Remove Tags Errors', ['shop' => $shop->name, 'productId' => $productId, 'errors' => $data['errors']]);
+                        $results[] = ['productId' => $productId, 'success' => false, 'error' => $data['errors']];
+                        continue;
+                    }
+                    $userErrors = $data['data']['tagsRemove']['userErrors'] ?? [];
+                    if (!empty($userErrors)) {
+                        Log::error('Bulk Remove Tags User Errors', ['shop' => $shop->name, 'productId' => $productId, 'errors' => $userErrors]);
+                        $results[] = ['productId' => $productId, 'success' => false, 'error' => $userErrors];
+                        continue;
+                    }
+                    $results[] = ['productId' => $productId, 'success' => true, 'data' => $data['data']['tagsRemove']['node']];
+                } else {
+                    Log::error('Bulk Remove Tags Failed', ['shop' => $shop->name, 'productId' => $productId, 'status' => $response->status()]);
+                    $results[] = ['productId' => $productId, 'success' => false, 'error' => 'API request failed'];
+                }
+            } catch (\Exception $e) {
+                Log::error('Bulk Remove Tags Exception', ['shop' => $shop->name, 'productId' => $productId, 'error' => $e->getMessage()]);
+                $results[] = ['productId' => $productId, 'success' => false, 'error' => $e->getMessage()];
+            }
+
+            // Throttle để tránh rate limit
+            usleep(100000); // 0.1 giây
+        }
+
+        return ['success' => !empty($results) && !in_array(false, array_column($results, 'success')), 'results' => $results];
+    }
+
+    /**
+     * Build query cho bulk tags (add hoặc remove)
+     */
+    private function buildBulkTagsQuery(string $productId, array $tags, string $action): string
+    {
+        $tagList = implode('", "', array_map('addslashes', $tags));
+        if ($action === 'add') {
+            return "
+            mutation bulkAddTags {
+                tagsAdd(id: \"$productId\", tags: [\"$tagList\"]) {
+                    node { id }
+                    userErrors { field message }
+                }
+            }";
+        } else {
+            return "
+            mutation bulkRemoveTags {
+                tagsRemove(id: \"$productId\", tags: [\"$tagList\"]) {
+                    node { id }
+                    userErrors { field message }
+                }
+            }";
+        }
+    }
+
+    /**
+     * Thêm sản phẩm vào bộ sưu tập
+     * @param User $shop
+     * @param string $collectionId
+     * @param array $productIds
+     * @return array
+     */
+    public function addProductsToCollection(User $shop, string $collectionId, array $productIds): array
+    {
+        $results = [];
+        $batches = array_chunk($productIds, 50); // Chia thành batch 50
+
+        foreach ($batches as $batch) {
+            $query = $this->buildCollectionQuery($collectionId, $batch, 'add');
+            $variables = ['ids' => $batch];
+
+            try {
+                $response = Http::withHeaders([
+                    'X-Shopify-Access-Token' => $shop->password,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ])->post($this->getGraphqlUrl($shop), [
+                    'query' => $query,
+                    'variables' => $variables
+                ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    if (isset($data['errors'])) {
+                        Log::error('Add Products to Collection Errors', ['shop' => $shop->name, 'errors' => $data['errors']]);
+                        $results[] = ['batch' => $batch, 'success' => false, 'error' => $data['errors']];
+                        continue;
+                    }
+                    $userErrors = $data['data']['collectionAddProducts']['userErrors'] ?? [];
+                    if (!empty($userErrors)) {
+                        Log::error('Add Products to Collection User Errors', ['shop' => $shop->name, 'errors' => $userErrors]);
+                        $results[] = ['batch' => $batch, 'success' => false, 'error' => $userErrors];
+                        continue;
+                    }
+                    $results[] = ['batch' => $batch, 'success' => true, 'data' => $data['data']['collectionAddProducts']['collection']];
+                } else {
+                    Log::error('Add Products to Collection Failed', ['shop' => $shop->name, 'status' => $response->status()]);
+                    $results[] = ['batch' => $batch, 'success' => false, 'error' => 'API request failed'];
+                }
+            } catch (\Exception $e) {
+                Log::error('Add Products to Collection Exception', ['shop' => $shop->name, 'error' => $e->getMessage()]);
+                $results[] = ['batch' => $batch, 'success' => false, 'error' => $e->getMessage()];
+            }
+
+            // Throttle để tránh rate limit
+            usleep(500000); // 0.5 giây
+        }
+
+        return ['success' => !empty($results) && !in_array(false, array_column($results, 'success')), 'results' => $results];
+    }
+
+    /**
+     * Xóa sản phẩm khỏi bộ sưu tập
+     * @param User $shop
+     * @param string $collectionId
+     * @param array $productIds
+     * @return array
+     */
+    public function removeProductsFromCollection(User $shop, string $collectionId, array $productIds): array
+    {
+        $results = [];
+        $batches = array_chunk($productIds, 50); // Chia thành batch 50
+
+        foreach ($batches as $batch) {
+            $query = $this->buildCollectionQuery($collectionId, $batch, 'remove');
+            $variables = ['ids' => $batch];
+
+            try {
+                $response = Http::withHeaders([
+                    'X-Shopify-Access-Token' => $shop->password,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ])->post($this->getGraphqlUrl($shop), [
+                    'query' => $query,
+                    'variables' => $variables
+                ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    if (isset($data['errors'])) {
+                        Log::error('Remove Products from Collection Errors', ['shop' => $shop->name, 'errors' => $data['errors']]);
+                        $results[] = ['batch' => $batch, 'success' => false, 'error' => $data['errors']];
+                        continue;
+                    }
+                    $userErrors = $data['data']['collectionRemoveProducts']['userErrors'] ?? [];
+                    if (!empty($userErrors)) {
+                        Log::error('Remove Products from Collection User Errors', ['shop' => $shop->name, 'errors' => $userErrors]);
+                        $results[] = ['batch' => $batch, 'success' => false, 'error' => $userErrors];
+                        continue;
+                    }
+                    $results[] = ['batch' => $batch, 'success' => true, 'data' => $data['data']['collectionRemoveProducts']['job']];
+                } else {
+                    Log::error('Remove Products from Collection Failed', ['shop' => $shop->name, 'status' => $response->status()]);
+                    $results[] = ['batch' => $batch, 'success' => false, 'error' => 'API request failed'];
+                }
+            } catch (\Exception $e) {
+                Log::error('Remove Products from Collection Exception', ['shop' => $shop->name, 'error' => $e->getMessage()]);
+                $results[] = ['batch' => $batch, 'success' => false, 'error' => $e->getMessage()];
+            }
+
+            // Throttle để tránh rate limit
+            usleep(500000); // 0.5 giây
+        }
+
+        return ['success' => !empty($results) && !in_array(false, array_column($results, 'success')), 'results' => $results];
+    }
+
+    /**
+     * Xây dựng truy vấn cho bộ sưu tập (thêm hoặc xóa)
+     */
+    private function buildCollectionQuery(string $collectionId, array $productIds, string $action): string
+    {
+        if ($action === 'add') {
+            return '
+        mutation addToCollection($ids: [ID!]!) {
+            collectionAddProducts(id: "' . $collectionId . '", productIds: $ids) {
+                collection { id }
+                userErrors { field message }
+            }
+        }';
+        } else {
+            return '
+        mutation removeFromCollection($ids: [ID!]!) {
+            collectionRemoveProducts(id: "' . $collectionId . '", productIds: $ids) {
+                job { id done }
+                userErrors { field message }
+            }
+        }';
+        }
     }
 }

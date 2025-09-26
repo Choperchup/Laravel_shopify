@@ -238,6 +238,64 @@
             animation: spin 1s linear infinite;
         }
 
+        /* Thêm style cho bảng */
+        .table-container {
+            overflow-x: auto;
+            /* Cho phép scroll ngang nếu bảng rộng */
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+        }
+
+        .table th,
+        .table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .table th {
+            background-color: #f9fafb;
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            color: #4b5563;
+        }
+
+        .table td {
+            font-size: 0.875rem;
+        }
+
+        .table .product-cell {
+            display: flex;
+            align-items: center;
+        }
+
+        .table .product-image {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            margin-right: 1rem;
+            border-radius: 0.25rem;
+        }
+
+        .table .status-active {
+            color: #059669;
+            background-color: #d1fae5;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+        }
+
+        .table .channels {
+            text-align: right;
+        }
+
+        /* Giữ nguyên các style khác */
+
         @keyframes spin {
             to {
                 transform: rotate(360deg);
@@ -264,7 +322,7 @@
         $selectedShop = $selectedShop ?? null;
         $products = $products ?? [];
         $pageInfo = $pageInfo ?? null;
-        $perPage = $perPage ?? 50;
+        $perPage = $perPage ?? 10;
         $error = $error ?? null;
         $filters = $filters ?? [];
         $sort = $sort ?? ['field' => 'title', 'direction' => 'ASC'];
@@ -396,6 +454,34 @@
             <button id="apply-filters" class="border rounded px-4 py-2 text-sm font-medium bg-blue-600 text-white">Áp
                 dụng</button>
         </div>
+
+        <!-- Bulk Actions Section (Thêm để hỗ trợ bulk actions) -->
+        <div class="bg-white rounded-lg border p-4 mt-4">
+            <h3 class="text-sm font-medium mb-2">Bulk Actions</h3>
+            <div class="flex space-x-4">
+                <select id="bulk-action" class="border rounded px-3 py-2 text-sm">
+                    <option value="">Chọn hành động</option>
+                    <option value="active">Active Products</option>
+                    <option value="draft">Draft Products</option>
+                    <option value="archive">Archive Products</option>
+                    <option value="add_tags">Add Tags</option>
+                    <option value="remove_tags">Remove Tags</option>
+                    <option value="add_collection">Add to Collection</option>
+                    <option value="remove_collection">Remove from Collection</option>
+                </select>
+                <input type="text" id="bulk-tags" placeholder="Tags (comma separated)"
+                    class="border rounded px-3 py-2 text-sm hidden" style="width: 200px;">
+                <select id="bulk-collection" class="border rounded px-3 py-2 text-sm hidden">
+                    <option value="">Chọn collection</option>
+                    @foreach($collections as $collection)
+                        <option value="{{ $collection['id'] }}">{{ $collection['title'] }}</option>
+                    @endforeach
+                </select>
+                <button id="bulk-submit"
+                    class="border rounded px-4 py-2 text-sm font-medium bg-green-600 text-white">Thực hiện</button>
+            </div>
+            <p id="bulk-status" class="text-sm text-gray-600 mt-2"></p>
+        </div>
     </section>
 
     <!-- Main Content -->
@@ -423,54 +509,50 @@
                         class="font-medium">{{ $selectedShop->email ?: str_replace('.myshopify.com', '', $selectedShop->name) }}</span>
                 </div>
 
-                <div class="grid grid-cols-4 gap-6" id="products-grid">
-                    @foreach($products as $product)
-                        <div class="bg-white rounded-lg border overflow-hidden hover-shadow transition-shadow">
-                            <!-- Product Image -->
-                            <div class="aspect-square bg-gray-100 overflow-hidden">
-                                @if(isset($product['images']) && count($product['images']) > 0)
-                                    <img src="{{ $product['images'][0]['url'] }}"
-                                        alt="{{ $product['images'][0]['altText'] ?? $product['title'] }}"
-                                        class="w-full h-full object-cover">
-                                @else
-                                    <div class="w-full h-full flex items-center justify-center text-gray-400">
-                                        Không có ảnh
-                                    </div>
-                                @endif
-                            </div>
-
-                            <!-- Product Info -->
-                            <div class="p-4">
-                                <h3 class="font-medium mb-2 line-clamp-2">{{ $product['title'] }}</h3>
-
-                                @if(isset($product['vendor']) && $product['vendor'])
-                                    <p class="text-xs text-gray-600 mb-2">{{ $product['vendor'] }}</p>
-                                @endif
-
-                                <div class="flex items-center justify-between">
-                                    <div class="text-sm font-medium">
-                                        @if($product['priceRange']['minVariantPrice']['amount'] === $product['priceRange']['maxVariantPrice']['amount'])
-                                            {{ number_format($product['priceRange']['minVariantPrice']['amount'], 0, ',', '.') }}
-                                            {{ $product['priceRange']['minVariantPrice']['currencyCode'] }}
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="select-all" class="border rounded"></th>
+                                <th>Product</th>
+                                <th>Status</th>
+                                <th>Inventory</th>
+                                <th>Category</th>
+                                <th>Channels</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($products as $product)
+                                <tr>
+                                    <td><input type="checkbox" class="product-checkbox border rounded"
+                                            data-id="{{ $product['id'] }}"></td>
+                                    <td class="product-cell">
+                                        @if(isset($product['images']) && count($product['images']) > 0)
+                                            <img src="{{ $product['images'][0]['url'] }}"
+                                                alt="{{ $product['images'][0]['altText'] ?? $product['title'] }}"
+                                                class="product-image">
                                         @else
-                                            {{ number_format($product['priceRange']['minVariantPrice']['amount'], 0, ',', '.') }} -
-                                            {{ number_format($product['priceRange']['maxVariantPrice']['amount'], 0, ',', '.') }}
-                                            {{ $product['priceRange']['minVariantPrice']['currencyCode'] }}
+                                            <div
+                                                class="product-image bg-gray-100 flex items-center justify-center text-gray-400 text-xs">
+                                                Không có ảnh</div>
                                         @endif
-                                    </div>
-
-                                    <span
-                                        class="text-xs px-2 py-1 rounded {{ $product['status'] === 'ACTIVE' ? 'text-green-600' : 'text-gray-600' }}">
-                                        {{ $product['status'] }}
-                                    </span>
-                                </div>
-
-                                @if(isset($product['variants']) && count($product['variants']) > 1)
-                                    <p class="text-xs text-gray-600 mt-2">{{ count($product['variants']) }} biến thể</p>
-                                @endif
-                            </div>
-                        </div>
-                    @endforeach
+                                        <div>
+                                            <p class="font-medium">{{ $product['title'] }}</p>
+                                            @if(isset($product['vendor']) && $product['vendor'])
+                                                <p class="text-xs text-gray-600">{{ $product['vendor'] }}</p>
+                                            @endif
+                                        </div>
+                                    </td>
+                                    <td><span
+                                            class="text-xs px-2 py-1 rounded {{ strtolower($product['status']) === 'active' ? 'text-green-600 bg-green-100' : 'text-gray-600 bg-gray-100' }}">{{ $product['status'] }}</span>
+                                    </td>
+                                    <td>Inventory not tracked</td> <!-- Có thể cập nhật động nếu có data inventory -->
+                                    <td>{{ $product['productType'] ?? '' }}</td>
+                                    <td class="channels">1</td> <!-- Giả định, có thể cập nhật từ API -->
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
                 </div>
 
                 <!-- Pagination -->
@@ -552,39 +634,51 @@
                 <div class="mb-6 text-sm text-gray-600">
                     Đang hiển thị sản phẩm từ: <span class="font-medium">${shopName}</span>
                 </div>
-                <div class="grid grid-cols-4 gap-6">
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="select-all" class="border rounded"></th>
+                                <th>Product</th>
+                                <th>Status</th>
+                                <th>Inventory</th>
+                                <th>Category</th>
+                                <th>Channels</th>
+                            </tr>
+                        </thead>
+                        <tbody>
             `;
 
             products.forEach(product => {
                 const imageHtml = product.images && product.images.length > 0
-                    ? `<img src="${product.images[0].url}" alt="${product.images[0].altText || product.title}" class="w-full h-full object-cover">`
-                    : `<div class="w-full h-full flex items-center justify-center text-gray-400">Không có ảnh</div>`;
+                    ? `<img src="${product.images[0].url}" alt="${product.images[0].altText || product.title}" class="product-image">`
+                    : `<div class="product-image bg-gray-100 flex items-center justify-center text-gray-400 text-xs">Không có ảnh</div>`;
 
-                const priceHtml = product.priceRange.minVariantPrice.amount === product.priceRange.maxVariantPrice.amount
-                    ? `${Number(product.priceRange.minVariantPrice.amount).toLocaleString()} ${product.priceRange.minVariantPrice.currencyCode}`
-                    : `${Number(product.priceRange.minVariantPrice.amount).toLocaleString()} - ${Number(product.priceRange.maxVariantPrice.amount).toLocaleString()} ${product.priceRange.minVariantPrice.currencyCode}`;
-
-                const statusClass = product.status === 'ACTIVE' ? 'text-green-600' : 'text-gray-600';
+                const statusClass = product.status.toLowerCase() === 'active' ? 'text-green-600 bg-green-100' : 'text-gray-600 bg-gray-100';
 
                 html += `
-                    <div class="bg-white rounded-lg border overflow-hidden hover-shadow transition-shadow">
-                        <div class="aspect-square bg-gray-100 overflow-hidden">
+                    <tr>
+                        <td><input type="checkbox" class="product-checkbox border rounded" data-id="${product.id}"></td>
+                        <td class="product-cell">
                             ${imageHtml}
-                        </div>
-                        <div class="p-4">
-                            <h3 class="font-medium mb-2 line-clamp-2">${product.title}</h3>
-                            ${product.vendor ? `<p class="text-xs text-gray-600 mb-2">${product.vendor}</p>` : ''}
-                            <div class="flex items-center justify-between">
-                                <div class="text-sm font-medium">${priceHtml}</div>
-                                <span class="text-xs px-2 py-1 rounded ${statusClass}">${product.status}</span>
+                            <div>
+                                <p class="font-medium">${product.title}</p>
+                                ${product.vendor ? `<p class="text-xs text-gray-600">${product.vendor}</p>` : ''}
                             </div>
-                            ${product.variants && product.variants.length > 1 ? `<p class="text-xs text-gray-600 mt-2">${product.variants.length} biến thể</p>` : ''}
-                        </div>
-                    </div>
+                        </td>
+                        <td><span class="text-xs px-2 py-1 rounded ${statusClass}">${product.status}</span></td>
+                        <td>Inventory not tracked</td> 
+                        <td>${product.productType || ''}</td>
+                        <td class="channels">1</td> 
+                    </tr>
                 `;
             });
 
-            html += '</div>';
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
 
             if (pageInfo && (pageInfo.hasNextPage || pageInfo.hasPreviousPage)) {
                 html += `<div class="mt-8 text-center space-x-4">`;
@@ -599,6 +693,7 @@
 
             container.innerHTML = html;
             bindPaginationEvents();
+            bindEvents();
         }
 
         function bindPaginationEvents() {
@@ -616,6 +711,27 @@
                     fetchProducts(getFilterParams({ after: nextBtn.dataset.cursor }));
                 });
             }
+        }
+
+        function bindEvents() {
+            const selectAll = document.getElementById('select-all');
+            const productCheckboxes = document.querySelectorAll('.product-checkbox');
+
+            selectAll.addEventListener('change', () => {
+                productCheckboxes.forEach(checkbox => {
+                    checkbox.checked = selectAll.checked;
+                });
+            });
+
+            productCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    if (!checkbox.checked) {
+                        selectAll.checked = false;
+                    } else if (Array.from(productCheckboxes).every(cb => cb.checked)) {
+                        selectAll.checked = true;
+                    }
+                });
+            });
         }
 
         function getFilterParams(override = {}) {
@@ -660,7 +776,80 @@
                 applyFiltersBtn.addEventListener('click', () => fetchProducts(getFilterParams()));
             }
 
+            bindEvents();
             bindPaginationEvents();
+
+            // Thêm event cho Bulk Actions
+            const bulkActionSelect = document.getElementById('bulk-action');
+            if (bulkActionSelect) {
+                bulkActionSelect.addEventListener('change', function () {
+                    const action = this.value;
+                    document.getElementById('bulk-tags')?.classList.toggle('hidden', !['add_tags', 'remove_tags'].includes(action));
+                    document.getElementById('bulk-collection')?.classList.toggle('hidden', !['add_collection', 'remove_collection'].includes(action));
+                });
+            }
+
+            const bulkSubmitBtn = document.getElementById('bulk-submit');
+            if (bulkSubmitBtn) {
+                bulkSubmitBtn.addEventListener('click', async function () {
+                    const selected = Array.from(document.querySelectorAll('.product-checkbox:checked')).map(cb => cb.dataset.id);
+                    if (selected.length === 0) {
+                        alert('Vui lòng chọn sản phẩm!');
+                        return;
+                    }
+
+                    const action = document.getElementById('bulk-action').value;
+                    if (!action) {
+                        alert('Vui lòng chọn hành động!');
+                        return;
+                    }
+
+                    let payload = { action, product_ids: selected };
+
+                    if (['add_tags', 'remove_tags'].includes(action)) {
+                        payload.tags = document.getElementById('bulk-tags').value.split(',').map(t => t.trim()).filter(t => t);
+                        if (payload.tags.length === 0) {
+                            alert('Vui lòng nhập tags!');
+                            return;
+                        }
+                    } else if (['add_collection', 'remove_collection'].includes(action)) {
+                        payload.collection_id = document.getElementById('bulk-collection').value;
+                        if (!payload.collection_id) {
+                            alert('Vui lòng chọn collection!');
+                            return;
+                        }
+                    }
+
+                    try {
+                        const response = await fetch('/api/products/bulk-action', {  // Điểm cuối đã sửa
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                            },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) {
+                            const text = await response.text();  // Ghi lại phản hồi đầy đủ để gỡ lỗi
+                            console.error('Phản hồi Lỗi API:', text);
+                            throw new Error(`Lỗi HTTP! Trạng thái: ${response.status}`);
+                        }
+
+                        const data = await response.json();
+                        document.getElementById('bulk-status').textContent = data.message;
+                        if (data.success) {
+                            // Làm mới sản phẩm sau 5 giây
+                            setTimeout(() => fetchProducts(getFilterParams()), 5000);
+                        } else {
+                            alert('Lỗi: ' + data.message);
+                        }
+                    } catch (error) {
+                        console.error('Lỗi Hành động Hàng loạt:', error);
+                        alert('Lỗi kết nối: ' + error.message);
+                    }
+                });
+            }
         });
     </script>
 </body>
