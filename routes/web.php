@@ -13,4 +13,7 @@ Route::prefix('api')->group(function () {
     Route::get('/shops', [ProductController::class, 'getShops'])->name('api.shops');
     Route::get('/', [ProductController::class, 'index'])->name('products.index');
     Route::post('/products/bulk-action', [ProductController::class, 'bulkActions']);
+    Route::post('/api/products/apply-single-discount', [ProductController::class, 'applySingleDiscount']);
+    Route::post('/api/products/apply-discount-expiration', [ProductController::class, 'applyDiscountWithExpiration']);
+    Route::post('/api/products/check-discount-expiration', [ProductController::class, 'checkDiscountExpiration']);
 });

@@ -482,6 +482,27 @@
             </div>
             <p id="bulk-status" class="text-sm text-gray-600 mt-2"></p>
         </div>
+
+        {{-- Rules action prices --}}
+       <div id="single-edit-panel" class="hidden bg-white p-4 rounded-lg shadow-lg mb-6">
+    <h3 class="text-lg font-medium mb-4">Chỉnh sửa giá cho sản phẩm được chọn</h3>
+    <form id="single-discount-form">
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label for="discount_percentage" class="block text-sm font-medium text-gray-700">Phần trăm giảm (%)</label>
+                <input type="number" id="discount_percentage" name="discount_percentage" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required min="0" max="100" value="60">
+            </div>
+            <div>
+                <label for="duration_hours" class="block text-sm font-medium text-gray-700">Thời gian giảm (giờ)</label>
+                <input type="number" id="duration_hours" name="duration_hours" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required min="1" value="5">
+            </div>
+        </div>
+        <button type="button" id="apply-single-discount" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded">Áp dụng giảm giá</button>
+    </form>
+    <div id="discount-status" class="mt-2 text-sm text-gray-600"></div>
+</div>
+
+
     </section>
 
     <!-- Main Content -->
@@ -527,14 +548,14 @@
                                     <td><input type="checkbox" class="product-checkbox border rounded"
                                             data-id="{{ $product['id'] }}"></td>
                                     <td class="product-cell">
-                                        @if(isset($product['images']) && count($product['images']) > 0)
-                                            <img src="{{ $product['images'][0]['url'] }}"
-                                                alt="{{ $product['images'][0]['altText'] ?? $product['title'] }}"
+                                        @if($product['image'])
+                                            <img src="{{ $product['image'] }}"
+                                                alt="{{ $product['title'] }}"
                                                 class="product-image">
                                         @else
-                                            <div
-                                                class="product-image bg-gray-100 flex items-center justify-center text-gray-400 text-xs">
-                                                Không có ảnh</div>
+                                            <div class="product-image bg-gray-100 flex items-center justify-center text-gray-400 text-xs">
+                                                Không có ảnh
+                                            </div>
                                         @endif
                                         <div>
                                             <p class="font-medium">{{ $product['title'] }}</p>
@@ -556,14 +577,14 @@
                 </div>
 
                 <!-- Pagination -->
-                @if(isset($pageInfo) && $pageInfo && ($pageInfo['hasNextPage'] || $pageInfo['hasPreviousPage']))
+                @if(isset($pageInfo) && $pageInfo && (isset($pageInfo['hasNextPage']) || isset($pageInfo['hasPreviousPage'])))
                     <div class="mt-8 text-center space-x-4">
-                        @if($pageInfo['hasPreviousPage'])
-                            <button id="prev-page" data-cursor="{{ $pageInfo['startCursor'] }}"
+                        @if(isset($pageInfo['hasPreviousPage']) && $pageInfo['hasPreviousPage'])
+                            <button id="prev-page" data-cursor="{{ $pageInfo['startCursor'] ?? '' }}"
                                 class="border rounded px-4 py-2 text-sm font-medium">← Trang trước</button>
                         @endif
-                        @if($pageInfo['hasNextPage'])
-                            <button id="next-page" data-cursor="{{ $pageInfo['endCursor'] }}"
+                        @if(isset($pageInfo['hasNextPage']) && $pageInfo['hasNextPage'])
+                            <button id="next-page" data-cursor="{{ $pageInfo['endCursor'] ?? '' }}"
                                 class="border rounded px-4 py-2 text-sm font-medium">Trang sau →</button>
                         @endif
                     </div>
@@ -650,8 +671,8 @@
             `;
 
             products.forEach(product => {
-                const imageHtml = product.images && product.images.length > 0
-                    ? `<img src="${product.images[0].url}" alt="${product.images[0].altText || product.title}" class="product-image">`
+                const imageHtml = product.image
+                    ? `<img src="${product.image}" alt="${product.title}" class="product-image">`
                     : `<div class="product-image bg-gray-100 flex items-center justify-center text-gray-400 text-xs">Không có ảnh</div>`;
 
                 const statusClass = product.status.toLowerCase() === 'active' ? 'text-green-600 bg-green-100' : 'text-gray-600 bg-gray-100';
@@ -683,10 +704,10 @@
             if (pageInfo && (pageInfo.hasNextPage || pageInfo.hasPreviousPage)) {
                 html += `<div class="mt-8 text-center space-x-4">`;
                 if (pageInfo.hasPreviousPage) {
-                    html += `<button id="prev-page" data-cursor="${pageInfo.startCursor}" class="border rounded px-4 py-2 text-sm font-medium">← Trang trước</button>`;
+                    html += `<button id="prev-page" data-cursor="${pageInfo.startCursor || ''}" class="border rounded px-4 py-2 text-sm font-medium">← Trang trước</button>`;
                 }
                 if (pageInfo.hasNextPage) {
-                    html += `<button id="next-page" data-cursor="${pageInfo.endCursor}" class="border rounded px-4 py-2 text-sm font-medium">Trang sau →</button>`;
+                    html += `<button id="next-page" data-cursor="${pageInfo.endCursor || ''}" class="border rounded px-4 py-2 text-sm font-medium">Trang sau →</button>`;
                 }
                 html += `</div>`;
             }
@@ -759,6 +780,7 @@
                 </div>
             `;
         }
+        
 
         document.addEventListener('DOMContentLoaded', function () {
             const perPageSelector = document.getElementById('per-page-selector');

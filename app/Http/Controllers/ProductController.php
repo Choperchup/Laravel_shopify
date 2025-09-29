@@ -10,6 +10,7 @@ use App\Jobs\BulkRemoveFromCollectionJob;
 use App\Services\ShopifyGraphQLService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use App\Models\User;
 
 class ProductController extends Controller
 {
@@ -238,16 +239,10 @@ class ProductController extends Controller
                     break;
                 case 'add_tags':
                     $tags = array_filter($request->input('tags', []));
-                    if (empty($tags)) {
-                        return response()->json(['success' => false, 'message' => 'Tags không được rỗng'], 400);
-                    }
                     BulkAddTagsJob::dispatch($shop, $productIds, $tags);
                     break;
                 case 'remove_tags':
                     $tags = array_filter($request->input('tags', []));
-                    if (empty($tags)) {
-                        return response()->json(['success' => false, 'message' => 'Tags không được rỗng'], 400);
-                    }
                     BulkRemoveTagsJob::dispatch($shop, $productIds, $tags);
                     break;
                 case 'add_collection':
@@ -273,6 +268,9 @@ class ProductController extends Controller
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
+
+    //Rules
+
 
     /**
      * Lấy domain của shop hiện tại từ request hoặc session
@@ -303,6 +301,10 @@ class ProductController extends Controller
         }
 
         $shops = $this->shopifyService->getAllShops();
-        return $shops->isNotEmpty() ? $shops->first()->name : '';
+        $domain = $shops->isNotEmpty() ? $shops->first()->name : '';
+        if (empty($domain)) {
+            throw new \Exception('Không tìm thấy shop nào. Vui lòng cài đặt ứng dụng Shopify.');
+        }
+        return $domain;
     }
 }
