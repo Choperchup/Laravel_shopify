@@ -1,55 +1,71 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <title>@yield('title', 'Quản lý Sản phẩm')</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>{{ $title ?? 'My Shopify App' }}</title>
 </head>
 
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-        <div class="container">
-            <a class="navbar-brand" href="{{ route('products.index') }}">Quản lý Sản phẩm</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    @if (auth()->check())
-                        <li class="nav-item">
-                            <form action="{{ route('logout') }}" method="POST">
-                                @csrf
-                                <button type="submit" class="nav-link btn btn-link">Đăng xuất</button>
-                            </form>
-                        </li>
-                    @else
-                        <li class="nav-item"><a class="nav-link" href="{{ route('login') }}">Đăng nhập</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{{ route('register') }}">Đăng ký</a></li>
-                    @endif
-                </ul>
-            </div>
-        </div>
+    {{-- Navbar --}}
+    <nav style="padding: 10px; background: #f4f6f8; border-bottom: 1px solid #ddd;">
+        <button id="goHome" style="margin-right: 15px;">Home</button>
+        <button id="goProducts" style="margin-right: 15px;">Products</button>
+        <button id="goOrders">Orders</button>
+        <button id="goRules">Rules</button>
     </nav>
 
-    <div class="container mt-4">
-        @if (session('status'))
-            <div class="alert alert-success">{{ session('status') }}</div>
-        @endif
-        @if ($errors->any())
-            <div class="alert alert-danger">
-                <ul>
-                    @foreach ($errors->all() as $error)
-                        <li>{{ $error }}</li>
-                    @endforeach
-                </ul>
-            </div>
-        @endif
-
+    {{-- Nội dung trang --}}
+    <div style="padding: 20px;">
         @yield('content')
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {{-- Shopify App Bridge CDN --}}
+    <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            var AppBridge = window['app-bridge'];
+            var createApp = AppBridge.default;
+            var actions = AppBridge.actions;
+
+            var host = new URLSearchParams(window.location.search).get("host");
+            console.log("Initializing App Bridge with host:", host);
+
+            var app = createApp({
+                apiKey: "{{ config('shopify-app.api_key') }}",
+                host: host,
+                forceRedirect: true
+            });
+
+            var TitleBar = actions.TitleBar;
+            TitleBar.create(app, { title: "{{ $title ?? 'Dashboard' }}" });
+
+            var Toast = actions.Toast;
+            var toast = Toast.create(app, { message: "Xin chào từ Blade + App Bridge!" });
+            toast.dispatch(Toast.Action.SHOW);
+
+            var Redirect = actions.Redirect;
+
+            document.getElementById("goHome").addEventListener("click", function () {
+                Redirect.create(app).dispatch(Redirect.Action.APP, "/");
+            });
+
+            document.getElementById("goProducts").addEventListener("click", function () {
+                console.log("Redirecting to /products");
+                Redirect.create(app).dispatch(Redirect.Action.APP, "{{route('product.index')}}");
+            });
+
+            document.getElementById("goOrders").addEventListener("click", function () {
+                Redirect.create(app).dispatch(Redirect.Action.APP, "/orders");
+            });
+
+            document.getElementById("goRules").addEventListener("click", function () {
+                console.log("Redirecting to /rules");
+                Redirect.create(app).dispatch(Redirect.Action.APP, "{{route('rules.index')}}");
+            });
+        });
+    </script>
 </body>
 
 </html>

@@ -3,58 +3,63 @@
 namespace App\Jobs;
 
 use App\Models\Rule;
-use App\Services\ShopifyGraphQLService;
+use App\Models\RuleVariant;
 use App\Models\User;
-use Illuminate\Bus\Queueable;
+use App\Services\ProductGraphQLService;
+use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
 class BulkApplyDiscountJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, Batchable;
 
-    protected $rule;
+    protected User $shop;
+    protected Rule $rule;
+    protected array $variants;
 
-    public function __construct(Rule $rule)
+    public function __construct(User $shop, Rule $rule, array $variants)
     {
+        $this->shop = $shop;
         $this->rule = $rule;
+        $this->variants = $variants;
     }
 
-    public function handle(ShopifyGraphQLService $service)
+    public function handle(ProductGraphQLService $service): void
     {
-        $shop = User::first(); // Giả sử chỉ có 1 shop, adjust nếu nhiều
-        $products = $service->getProductsByRule($shop, $this->rule);
-        $productIds = array_column($products, 'id');
-
-        $result = $service->bulkUpdatePrices($shop, $productIds, $this->rule);
-
-        if ($this->rule->add_tag) {
-            BulkAddTagsJob::dispatch($shop, $productIds, [$this->rule->add_tag]);
+        foreach ($this->variants as $var) {
+            $originalPrice = (float) $var['price'];
+            $originalCompare = $var['compareAtPrice'] ? (float) $var['compareAtPrice'] : null;
+            if ($this->rule->discount_base === 'current_price') {
+                $base = $originalPrice;
+                $newCompare = $originalCompare ?? $base;
+                if ($originalCompare) {
+                    $newCompare = $base; // Như trong trường hợp 2
+                }
+                $discountAmount = $this->rule->discount_type === 'percentage' ? $base * ($this->rule->discount_value / 100) : $this->rule->discount_value;
+                $newPrice = max(0, $base - $discountAmount);
+            } else {
+                $base = $originalCompare ?? $originalPrice;
+                $discountAmount = $this->rule->discount_type === 'percentage' ? $base * ($this->rule->discount_value / 100) : $this->rule->discount_value;
+                $newPrice = max(0, $base - $discountAmount);
+                $newCompare = $base;
+            }
+            $update = $service->updateVariantPrices($this->shop, $var['id'], $newPrice, $newCompare);
+            if (empty($update['userErrors'])) {
+                RuleVariant::create([
+                    'rule_id' => $this->rule->id,
+                    'variant_id' => $var['id'],
+                    'product_id' => $var['product_id'],
+                    'original_price' => $originalPrice,
+                    'original_compare_at_price' => $originalCompare,
+                ]);
+            } else {
+                Log::error('Cập nhật biến thể thất bại', ['errors' => $update['userErrors']]);
+            }
         }
-
-        if (!$result['success']) {
-            Log::error('Bulk Apply Discount Failed', [
-                'rule_id' => $this->rule->id,
-                'error' => $result['results']
-            ]);
-            $this->fail(new \Exception('Bulk apply discount failed'));
-            return;
-        }
-
-        Log::info('Bulk Apply Discount Completed', [
-            'rule_id' => $this->rule->id,
-            'products' => count($productIds)
-        ]);
-    }
-
-    public function failed(\Throwable $exception)
-    {
-        Log::critical('Bulk Apply Discount Job Failed Permanently', [
-            'rule_id' => $this->rule->id,
-            'error' => $exception->getMessage()
-        ]);
     }
 }

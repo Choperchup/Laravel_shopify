@@ -160,7 +160,7 @@ return [
     |
     */
 
-    'api_version' => env('SHOPIFY_API_VERSION', '2024-04'),
+    'api_version' => env('SHOPIFY_API_VERSION', '2024-10'),
 
     /*
     |--------------------------------------------------------------------------
@@ -586,7 +586,7 @@ return [
     */
     'frontend_type' => env('SHOPIFY_FRONTEND_TYPE', 'MPA'),
 
-    'iframe_ancestors' => '',
+    'iframe_ancestors' => 'https://admin.shopify.com',
 
     /*
     |--------------------------------------------------------------------------
@@ -600,4 +600,3 @@ return [
         'api',
     ]
 ];
-
