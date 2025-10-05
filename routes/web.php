@@ -2,11 +2,11 @@
 
 use App\Http\Controllers\ProductGraphQLController;
 use App\Http\Controllers\RulesGraphQLController;
-use Doctrine\Inflector\Rules\English\Rules;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['ensure.host'])->group(function () {
+// Nhóm route của app
+Route::middleware(['ensure.host', 'ensure.hmac'])->group(function () {
     Route::get('/', function () {
         return view('welcome');
     })->name('home');
@@ -20,7 +20,6 @@ Route::middleware(['ensure.host'])->group(function () {
 
     Route::post('/products/bulk-action', [ProductGraphQLController::class, 'bulkAction'])
         ->name('products.bulk-action');
-
 
     Route::get('/rules', [RulesGraphQLController::class, 'index'])
         ->name('rules.index');
@@ -40,15 +39,18 @@ Route::middleware(['ensure.host'])->group(function () {
     Route::delete('rules/{rule}', [RulesGraphQLController::class, 'destroy'])
         ->name('rules.destroy');
 
-
-    // Tìm kiếm API
-    Route::get('/products/search', [RulesGraphQLController::class, 'searchProducts'])->name('api.products.search');
-    // Thêm các route khác (cần triển khai phương thức tương ứng)
-    Route::get('/collections/search', [RulesGraphQLController::class, 'searchCollections'])->name('api.collections.search');
-    Route::get('/tags/search', [RulesGraphQLController::class, 'searchTags'])->name('api.tags.search');
-    Route::get('/vendors/search', [RulesGraphQLController::class, 'searchVendors'])->name('api.vendors.search');
+    // Search APIs
+    Route::get('/products/search', [RulesGraphQLController::class, 'searchProducts'])
+        ->name('api.products.search');
+    Route::get('/collections/search', [RulesGraphQLController::class, 'searchCollections'])
+        ->name('api.collections.search');
+    Route::get('/tags/search', [RulesGraphQLController::class, 'searchTags'])
+        ->name('api.tags.search');
+    Route::get('/vendors/search', [RulesGraphQLController::class, 'searchVendors'])
+        ->name('api.vendors.search');
 });
 
+// Route check batch status (không cần verify hmac, dùng cho job tracking nội bộ)
 Route::get('/products/bulk-action/status/{batchId}', function ($batchId) {
     $batch = Bus::findBatch($batchId);
     if (!$batch) {

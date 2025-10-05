@@ -8,11 +8,12 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Osiset\ShopifyApp\Contracts\ShopModel as IShopModel;
 use Osiset\ShopifyApp\Traits\ShopModel;
+use Illuminate\Database\Eloquent\SoftDeletes; // thêm dòng này
 
 class User extends Authenticatable implements IShopModel
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, ShopModel;
+    use HasFactory, Notifiable, ShopModel, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.

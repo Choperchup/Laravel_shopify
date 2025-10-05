@@ -8,6 +8,7 @@
     {{-- @vite(['resources/css/app.css', 'resources/css/style.css']) --}}
 </head>
 
+
 <body>
     <div class="container">
         <div class="header">
