@@ -24,6 +24,7 @@ class User extends Authenticatable implements IShopModel
         'name',
         'email',
         'password',
+        'access_token',
     ];
 
     /**
@@ -45,6 +46,7 @@ class User extends Authenticatable implements IShopModel
     {
         return [
             'email_verified_at' => 'datetime',
+            'deleted_at' => 'datetime'
             // 'password' => 'hashed',
         ];
     }

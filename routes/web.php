@@ -39,6 +39,18 @@ Route::middleware(['ensure.host', 'ensure.hmac'])->group(function () {
     Route::delete('rules/{rule}', [RulesGraphQLController::class, 'destroy'])
         ->name('rules.destroy');
 
+
+    Route::post('rules/{rule}/duplicate', [RulesGraphQLController::class, 'duplicate'])
+        ->name('rules.duplicate');
+
+    Route::post('rules/{rule}/archive', [RulesGraphQLController::class, 'archive'])
+        ->name('rules.archive');
+
+    Route::post('rules/{rule}/toggle', [RulesGraphQLController::class, 'toggle'])
+        ->name('rules.toggle');
+
+    Route::post('rules/{rule}/restore', [RulesGraphQLController::class, 'restore'])
+        ->name('rules.restore');
     // Search APIs
     Route::get('/products/search', [RulesGraphQLController::class, 'searchProducts'])
         ->name('api.products.search');

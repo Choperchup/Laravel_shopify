@@ -21,7 +21,6 @@ class ProductGraphQLService
             $shop->name,
             config('shopify-app.api_version')
         );
-        
     }
 
     /**
@@ -32,8 +31,8 @@ class ProductGraphQLService
     private function graphqlRequest(User $shop, string $query): ?array
     {
         $url   = $this->getGraphqlUrl($shop);
-        $token = $shop->access_token ?? $shop->password; // Ưu tiên access_token, fallback password
-
+        $token = $shop->password; // Ưu tiên access_token, fallback password
+        logger('🔎 GraphQL Request', ['url' => $url, 'token_exists' => !empty($token), 'query' => $query]);
         try {
             $response = Http::withHeaders([
                 'X-Shopify-Access-Token' => $token,
@@ -450,7 +449,7 @@ class ProductGraphQLService
     GRAPHQL;
 
         $url   = $this->getGraphqlUrl($shop);
-        $token = $shop->access_token ?? $shop->password; // Ưu tiên access_token, fallback password
+        $token = $shop->password; // Ưu tiên access_token, fallback password
 
         try {
             $response = Http::withHeaders([
@@ -497,7 +496,7 @@ class ProductGraphQLService
     GRAPHQL;
 
         $url   = $this->getGraphqlUrl($shop);
-        $token = $shop->access_token ?? $shop->password;
+        $token = $shop->password;
 
         try {
             $response = Http::withHeaders([

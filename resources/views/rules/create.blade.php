@@ -4,6 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
     <title>Tạo Quy tắc Mới</title>
     <!-- Thêm Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -26,16 +28,20 @@
             width: 100%;
         }
     </style>
+    <!-- Thêm jQuery trước Select2 và script custom -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 
 <body>
     <div class="container-fluid mt-4">
         <!-- Tiêu đề -->
         <h2>Tạo Quy tắc Mới</h2>
-        <a href="{{ route('rules.index') }}" class="btn btn-secondary mb-3">Quay lại</a>
+        <a href="{{ route('rules.index') }}?host={{ request()->get('host') }}&shop={{ request()->get('shop') }}"
+            class="btn btn-secondary mb-3">Quay lại</a>
 
         <!-- Biểu mẫu tạo quy tắc -->
-        <form action="{{ route('rules.store') }}" method="POST" class="card p-4">
+        <form action="{{ route('rules.store') }}?host={{ request()->get('host') }}&shop={{ request()->get('shop') }}"
+            method="POST" class="card p-4">
             @csrf
             <div class="row g-3">
                 <!-- Tên quy tắc -->
@@ -184,27 +190,51 @@
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script>
         $(document).ready(function () {
-            // Khởi tạo Select2
+            // Extract host and shop from current URL
+            var urlParams = new URLSearchParams(window.location.search);
+            var hostParam = urlParams.get('host');
+            var shopParam = urlParams.get('shop');
+
+            // Khởi tạo Select2 với AJAX
             $('.select2').select2({
                 ajax: {
                     url: function () {
+                        var baseUrl;
                         switch ($(this).attr('id')) {
-                            case 'products-select': return '{{ route('api.products.search') }}';
-                            case 'collections-select': return '{{ route('api.collections.search') }}';
-                            case 'tags-select': return '{{ route('api.tags.search') }}';
-                            case 'vendors-select': return '{{ route('api.vendors.search') }}';
-                            case 'exclude-products': return '{{ route('api.products.search') }}';
+                            case 'products-select':
+                            case 'exclude-products':
+                                baseUrl = '{{ route('api.products.search') }}';
+                                break;
+                            case 'collections-select':
+                                baseUrl = '{{ route('api.collections.search') }}';
+                                break;
+                            case 'tags-select':
+                                baseUrl = '{{ route('api.tags.search') }}';
+                                break;
+                            case 'vendors-select':
+                                baseUrl = '{{ route('api.vendors.search') }}';
+                                break;
                         }
+                        // Append host and shop parameters
+                        if (hostParam && shopParam) {
+                            baseUrl += (baseUrl.includes('?') ? '&' : '?') + 'host=' + encodeURIComponent(hostParam) + '&shop=' + encodeURIComponent(shopParam);
+                        }
+                        return baseUrl;
                     },
                     dataType: 'json',
                     delay: 250,
                     data: function (params) {
-                        return { q: params.term, page: params.page };
+                        return {
+                            q: params.term,
+                            page: params.page,
+                            host: hostParam, // Gửi host trong data
+                            shop: shopParam  // Gửi shop trong data
+                        };
                     },
                     processResults: function (data, params) {
                         params.page = params.page || 1;
                         return {
-                            results: data.map(item => ({ id: item.id, text: item.title || item.node })),
+                            results: data.map(item => ({ id: item.id, text: item.text || item.title || item.node })),
                             pagination: { more: data.length === 250 }
                         };
                     },
@@ -229,6 +259,37 @@
                     alert('Thời gian bắt đầu phải trước thời gian kết thúc!');
                     $('#end_at').val('');
                 }
+            });
+
+            // Xử lý submit form qua AJAX
+            $('form').on('submit', function (e) {
+                e.preventDefault();
+
+                const form = $(this);
+                const url = form.attr('action');
+                const data = form.serialize() + (hostParam && shopParam ? '&host=' + encodeURIComponent(hostParam) + '&shop=' + encodeURIComponent(shopParam) : '');
+
+                $.ajax({
+                    url: url,
+                    type: 'POST',
+                    data: data,
+                    headers: {
+                        'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content'),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    success: function (response) {
+                        if (response.success) {
+                            alert(response.message || "Lưu thành công!");
+                            form.trigger("reset");
+                            $('.select2').val(null).trigger('change');
+                        } else {
+                            alert(response.message || 'Lưu thất bại!');
+                        }
+                    },
+                    error: function (xhr) {
+                        alert('Lỗi: ' + (xhr.responseJSON?.message || 'Vui lòng thử lại'));
+                    }
+                });
             });
         });
     </script>

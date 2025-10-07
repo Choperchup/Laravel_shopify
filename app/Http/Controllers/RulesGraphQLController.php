@@ -25,6 +25,7 @@ class RulesGraphQLController extends Controller
     {
         $query = Rule::query();
         $tab = $request->tab ?? 'main';
+
         if ($tab === 'archived') {
             $query->whereNotNull('archived_at');
         } else {
@@ -34,8 +35,7 @@ class RulesGraphQLController extends Controller
         // Bộ lọc
         if ($search = $request->search) $query->where('name', 'like', "%$search%");
         if ($status = $request->status) {
-            // Logic tùy chỉnh, ví dụ: nếu ($status === 'active') $query->where('active', true); v.v.
-            // Đối với nâng cao, ánh xạ sang các truy vấn (ví dụ: tương lai: where('start_at', '>', now()))
+            // Tùy chỉnh filter theo status
         }
         if ($applyTo = $request->apply_to) $query->where('apply_to_type', $applyTo);
         if ($discountType = $request->discount_type) $query->where('discount_type', $discountType);
@@ -43,7 +43,6 @@ class RulesGraphQLController extends Controller
         if ($maxValue = $request->max_discount) $query->where('discount_value', '<=', $maxValue);
         if ($startFrom = $request->start_from) $query->where('start_at', '>=', $startFrom);
         if ($startTo = $request->start_to) $query->where('start_at', '<=', $startTo);
-        // Tương tự cho end_at
 
         // Sắp xếp
         $sort = $request->sort ?? 'name';
@@ -52,7 +51,11 @@ class RulesGraphQLController extends Controller
 
         $rules = $query->paginate(10);
 
-        Log::info('Query conditions: ', ['tab' => $tab, 'archived_at' => $query->toSql()]);
+        Log::info('Query conditions: ', [
+            'sql' => $query->toSql(),
+            'bindings' => $query->getBindings(),
+            'tab' => $tab
+        ]);
 
         return view('rules.index', compact('rules', 'tab'));
     }
@@ -60,45 +63,74 @@ class RulesGraphQLController extends Controller
     public function create()
     {
         $shop = $this->service->getFirstShop();
-        $products = $this->service->getProductType($shop, ''); // Truy vấn tất cả sản phẩm, điều chỉnh query nếu cần
+        $products = $this->service->getProductType($shop, '');
         $tags = $this->service->getTags($shop);
         $vendors = $this->service->getVendors($shop);
-        $collections = $this->service->getCollections($shop); // Giả sử phương thức hiện có
-        // dd($products, $collections); // Kiểm tra cấu trúc mảng
-        // Đối với sản phẩm, sử dụng tìm kiếm AJAX
+        $collections = $this->service->getCollections($shop);
+
         return view('rules.create', compact('products', 'tags', 'vendors', 'collections'));
     }
 
     public function store(Request $request)
     {
-        // Xác thực: $request->validate([...])
         Log::info('Request data: ', $request->all());
+
         $validatedData = $request->validate([
             'name' => 'required|string|max:255',
             'discount_value' => 'required|numeric|min:0',
             'discount_type' => 'required|in:percentage,fixed_amount',
             'discount_base' => 'required|in:current_price,compare_at_price',
             'apply_to_type' => 'required|in:products,collections,tags,vendors,whole_store',
-            'apply_to_targets' => 'present|array',
-            'exclude_products' => 'present|array',
+            'apply_to_targets' => 'nullable|array',
+            'exclude_products' => 'nullable|array',
             'start_at' => 'nullable|date',
             'end_at' => 'nullable|date|after:start_at',
             'tags_to_add' => 'nullable|string',
         ]);
+
+        // Convert array to JSON string nếu DB cột là text
+        if (isset($validatedData['apply_to_targets'])) {
+            $validatedData['apply_to_targets'] = json_encode($validatedData['apply_to_targets']);
+        }
+        if (isset($validatedData['exclude_products'])) {
+            $validatedData['exclude_products'] = json_encode($validatedData['exclude_products']);
+        }
+
         $rule = Rule::create($validatedData);
-        $lastPage = ceil(Rule::count() / 10); // Tính trang cuối
+        $lastPage = ceil(Rule::count() / 10);
+
         Log::info('Created rule: ', ['id' => $rule->id, 'name' => $rule->name]);
-        return redirect()->route('rules.index', ['page' => $lastPage])->with('success', 'Quy tắc đã được tạo');
+
+        if ($request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Quy tắc đã được tạo thành công!',
+                'rule' => $rule,
+                'last_page' => $lastPage
+            ]);
+        }
+        // Lấy host/shop từ request hoặc session
+        $host = $request->get('host') ?? session('shopify_host');
+        $shop = $request->get('shop') ?? session('shopify_shop');
+
+        return redirect()->route('rules.index', [
+            'page' => $lastPage,
+            'host' => $host,
+            'shop' => $shop,
+        ])->with('success', 'Quy tắc đã được tạo');
     }
 
     public function edit(Rule $rule)
     {
         $shop = $this->service->getFirstShop();
-        $products = $this->service->getProductType($shop, ''); // Truy vấn tất cả sản phẩm
+        $products = $this->service->getProductType($shop, '');
         $collections = $this->service->getCollections($shop);
         $tags = $this->service->getTags($shop);
         $vendors = $this->service->getVendors($shop);
-        return view('rules.edit', compact('rules', 'products', 'collections', 'tags', 'vendors'));
+
+        // dd($collections);
+
+        return view('rules.edit', compact('rule', 'products', 'collections', 'tags', 'vendors'));
     }
 
     public function update(Request $request, Rule $rule)
@@ -109,20 +141,40 @@ class RulesGraphQLController extends Controller
             'discount_type' => 'required|in:percentage,fixed_amount',
             'discount_base' => 'required|in:current_price,compare_at_price',
             'apply_to_type' => 'required|in:products,collections,tags,vendors,whole_store',
-            'apply_to_targets' => 'present|array',
-            'exclude_products' => 'present|array',
+            'apply_to_targets' => 'nullable|array',
+            'exclude_products' => 'nullable|array',
             'start_at' => 'nullable|date',
             'end_at' => 'nullable|date|after:start_at',
             'tags_to_add' => 'nullable|string',
         ]);
 
+        // Convert arrays to JSON string nếu DB cột là text
+        if (isset($validatedData['apply_to_targets'])) {
+            $validatedData['apply_to_targets'] = json_encode($validatedData['apply_to_targets']);
+        }
+        if (isset($validatedData['exclude_products'])) {
+            $validatedData['exclude_products'] = json_encode($validatedData['exclude_products']);
+        }
+
         $rule->update($validatedData);
-        return redirect()->route('rules.index')->with('success', 'Quy tắc đã được cập nhật');
+        // Lấy host/shop từ request hoặc session
+        $host = $request->get('host') ?? session('shopify_host');
+        $shop = $request->get('shop') ?? session('shopify_shop');
+
+        if ($request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Quy tắc đã được cập nhật',
+                'redirect' => null, // hoặc route nếu bạn muốn reload bảng
+            ]);
+        }
+
+        return back()->with('success', 'Quy tắc đã được cập nhật');
     }
 
     public function toggle(Rule $rule)
     {
-        $shop = $this->service->getFirstShop(); // Hoặc từ phiên
+        $shop = $this->service->getFirstShop();
         if ($rule->active) {
             $rule->active = false;
             $rule->save();
@@ -138,7 +190,7 @@ class RulesGraphQLController extends Controller
     public function archive(Rule $rule)
     {
         $rule->update(['archived_at' => now(), 'active' => false]);
-        $this->disableRule($this->service->getFirstShop(), $rule); // Vô hiệu hóa nếu lưu trữ
+        $this->disableRule($this->service->getFirstShop(), $rule);
         return back();
     }
 
@@ -155,69 +207,149 @@ class RulesGraphQLController extends Controller
         return back();
     }
 
-    public function duplicate(Rule $rule)
+    public function duplicate(Request $request, Rule $rule)
     {
         $dup = $rule->replicate();
         $dup->name = 'Bản sao của ' . $rule->name;
         $dup->active = false;
         $dup->save();
-        return redirect()->route('rules.edit', $dup);
+
+        // Lấy host và shop từ request hoặc session
+        $host = $request->get('host') ?? session('shopify_host');
+        $shop = $request->get('shop') ?? session('shopify_shop');
+
+        return redirect()->route('rules.edit', [
+            'rule' => $dup->id,
+            'host' => $host,
+            'shop' => $shop,
+        ]);
     }
 
     protected function applyRule(User $shop, Rule $rule): void
     {
-        if ($rule->ruleVariants()->exists()) return; // Đã áp dụng
+        if ($rule->ruleVariants()->exists()) return;
+
         $variants = $this->service->getMatchingVariants($shop, $rule);
         $batch = Bus::batch([])->name('Áp dụng Quy tắc ' . $rule->id)->dispatch();
+
         $chunks = array_chunk($variants, 100);
         foreach ($chunks as $chunk) {
             $batch->add(new BulkApplyDiscountJob($shop, $rule, $chunk));
         }
+
         $productIds = array_unique(array_column($variants, 'product_id'));
         if ($rule->tags_to_add) {
             $batch->add(new BulkProductActionJob($shop, 'add_tags', $productIds, ['tags' => $rule->tags_to_add]));
         }
+
         Log::info('Áp dụng quy tắc', ['rule_id' => $rule->id]);
     }
 
     protected function disableRule(User $shop, Rule $rule): void
     {
-        if (!$rule->ruleVariants()->exists()) return; // Chưa áp dụng
+        if (!$rule->ruleVariants()->exists()) return;
+
         $batch = Bus::batch([])->name('Vô hiệu hóa Quy tắc ' . $rule->id)->dispatch();
         $ruleVariants = $rule->ruleVariants;
         $chunks = $ruleVariants->chunk(100);
+
         foreach ($chunks as $chunk) {
             $batch->add(new BulkRestoreDiscountJob($shop, $rule, $chunk));
         }
+
         $productIds = $ruleVariants->pluck('product_id')->unique()->toArray();
         if ($rule->tags_to_add) {
             $batch->add(new BulkProductActionJob($shop, 'remove_tags', $productIds, ['tags' => $rule->tags_to_add]));
         }
+
         Log::info('Vô hiệu hóa quy tắc', ['rule_id' => $rule->id]);
     }
 
-    // API cho tìm kiếm (ví dụ: sản phẩm)
+    // API cho tìm kiếm sản phẩm
     public function searchProducts(Request $request)
     {
         $shop = $this->service->getFirstShop();
         $queryStr = $request->q ? 'title:*' . $request->q . '*' : '';
 
-        // Sử dụng truy vấn tương tự như getMatchingVariants
         $products = $this->service->getProducts($shop, 20, null, null, $queryStr);
 
-        // Chuẩn bị dữ liệu cho Select2
         $results = [];
         if ($products) {
             foreach ($products['products'] as $edge) {
                 $node = $edge['node'];
                 $results[] = [
                     'id' => $node['id'],
-                    'title' => $node['title'],
+                    'text' => $node['title'],
                 ];
             }
         }
 
         return response()->json($results);
     }
-    // Tương tự cho collections, v.v.
+
+    // API cho tìm kiếm collections
+    public function searchCollections(Request $request)
+    {
+        $shop = $this->service->getFirstShop();
+        $collections = $this->service->getCollections($shop);
+
+        $results = [];
+        if ($collections && isset($collections['edges'])) {
+            foreach ($collections['edges'] as $edge) {
+                $node = $edge['node'];
+                if (!$request->q || stripos($node['title'], $request->q) !== false) {
+                    $results[] = [
+                        'id' => $node['id'],
+                        'text' => $node['title'],
+                    ];
+                }
+            }
+        }
+
+        return response()->json($results);
+    }
+
+    // API cho tìm kiếm tags
+    public function searchTags(Request $request)
+    {
+        $shop = $this->service->getFirstShop();
+        $tags = $this->service->getTags($shop);
+
+        $results = [];
+        if ($tags && isset($tags['shop']['productTags']['edges'])) {
+            foreach ($tags['shop']['productTags']['edges'] as $edge) {
+                $node = $edge['node'];
+                if (!$request->q || stripos($node, $request->q) !== false) {
+                    $results[] = [
+                        'id' => $node,
+                        'text' => $node,
+                    ];
+                }
+            }
+        }
+
+        return response()->json($results);
+    }
+
+    // API cho tìm kiếm vendors
+    public function searchVendors(Request $request)
+    {
+        $shop = $this->service->getFirstShop();
+        $vendors = $this->service->getVendors($shop);
+
+        $results = [];
+        if ($vendors && isset($vendors['shop']['productVendors']['edges'])) {
+            foreach ($vendors['shop']['productVendors']['edges'] as $edge) {
+                $node = $edge['node'];
+                if (!$request->q || stripos($node, $request->q) !== false) {
+                    $results[] = [
+                        'id' => $node,
+                        'text' => $node,
+                    ];
+                }
+            }
+        }
+
+        return response()->json($results);
+    }
 }

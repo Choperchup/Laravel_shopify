@@ -37,6 +37,7 @@ class EnsureShopifyHmac
             'computed_string' => $computedString,
             'provided_hmac'   => $hmac,
             'calculated_hmac' => $calculated,
+            'api_secret' => env('SHOPIFY_API_SECRET'), // Thêm để kiểm tra secret
         ]);
 
         if (!$hmac || !hash_equals($calculated, $hmac)) {

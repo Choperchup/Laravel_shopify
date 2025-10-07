@@ -42,7 +42,7 @@
             var app = createApp({
                 apiKey: "{{ config('shopify-app.api_key') }}",
                 host: host,
-                forceRedirect: {{ app()->environment('production') ? 'true' : 'false' }}
+                forceRedirect: false, // Chuyển sang false để tự xử lý redirect
             });
 
             // TitleBar
@@ -80,6 +80,17 @@
                     }
                 });
             };
+
+            // 👉 Lưu app vào window toàn cục để redirect page có thể tái sử dụng
+            if (window.top) {
+                try {
+                    window.top.Shopify = window.top.Shopify || {};
+                    window.top.Shopify.AppBridge = AppBridge;
+                    window.top.Shopify.AppBridgeApp = app;
+                } catch (err) {
+                    console.warn("Không thể gán app vào window.top:", err);
+                }
+            }
         });
 
     </script>
