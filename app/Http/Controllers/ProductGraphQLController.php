@@ -186,42 +186,50 @@ class ProductGraphQLController extends Controller
     {
         $currentShopDomain = $this->getCurrentShopDomain($request);
         $shop = User::where('name', $currentShopDomain)->first();
+
         if (!$shop) {
             return response()->json(['error' => 'Shop not found'], 404);
         }
 
-        $productIds = $request->input('product_ids', []);
+        // ✅ Hỗ trợ cả 2 kiểu key: product_ids hoặc productIds
+        $productIds = $request->input('product_ids') ?? $request->input('productIds', []);
         $action     = $request->input('action');
         $payload    = $request->input('payload', []);
 
         if (empty($productIds)) {
+            Log::warning('⚠️ Bulk action: no product IDs received', [
+                'action' => $action,
+                'payload' => $payload,
+                'raw' => $request->all(),
+            ]);
             return response()->json(['error' => 'No products selected'], 422);
         }
 
-        // 🔧 Đảm bảo collection_id là string thay vì mảng
+        // 🔧 Fix collection ID type
         if (in_array($action, ['add_collection', 'remove_collection']) && isset($payload['collection_id'])) {
             if (is_array($payload['collection_id'])) {
-                // Lấy phần tử đầu tiên (radio chỉ chọn được 1)
                 $payload['collection_id'] = $payload['collection_id'][0] ?? null;
             }
         }
-        // Log::info("Shopify controller", [
-        //   'payload' => $payload,
-        //   'action'  => $action,
-        //   'productIds'     => $productIds
-        // ]);
-        // ✅ Tạo một job cho mỗi product ID
+
+        Log::info("🚀 Dispatching BulkProductActionJob", [
+            'shop' => $shop->name,
+            'action' => $action,
+            'productIds' => $productIds,
+            'payload' => $payload,
+        ]);
+
+        // ✅ Tạo batch job
         $jobs = [];
         foreach ($productIds as $id) {
             $jobs[] = new BulkProductActionJob($shop, $action, [$id], $payload);
         }
 
-        // ✅ Dùng Bus::batch để theo dõi tiến độ
         $batch = Bus::batch($jobs)->dispatch();
 
         return response()->json([
             'batch_id' => $batch->id,
-            'message'  => 'Bulk action queued'
+            'message'  => 'Bulk action queued successfully',
         ]);
     }
 }

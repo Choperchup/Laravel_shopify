@@ -12,22 +12,137 @@
     <!-- Thêm Select2 CSS cho multi-select và tìm kiếm -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <style>
+        body {
+            background-color: #f6f6f7;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #212b36;
+        }
+
+        h2 {
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #e1e3e5;
+            border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        label.form-label {
+            font-weight: 600;
+            color: #212b36;
+            margin-bottom: 0.4rem;
+        }
+
+        .form-control,
+        .form-select,
+        .select2-selection {
+            border-radius: 6px !important;
+            border-color: #c4cdd5 !important;
+            box-shadow: none !important;
+        }
+
+        .form-control:focus,
+        .form-select:focus,
+        .select2-selection:focus {
+            border-color: #5c6ac4 !important;
+            box-shadow: 0 0 0 2px rgba(92, 106, 196, 0.2) !important;
+        }
+
+        .btn-primary {
+            background-color: #5c6ac4;
+            border-color: #5c6ac4;
+            font-weight: 600;
+            padding: 0.5rem 1.2rem;
+        }
+
+        .btn-primary:hover {
+            background-color: #4e5bbf;
+            border-color: #4e5bbf;
+        }
+
+        .btn-secondary {
+            background-color: #f4f6f8;
+            color: #212b36;
+            border: 1px solid #c4cdd5;
+        }
+
+        .btn-secondary:hover {
+            background-color: #e0e2e5;
+        }
+
+        /* Layout giống Shopify */
+        .container-fluid {
+            max-width: 1300px;
+        }
+
         .form-group {
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.25rem;
         }
 
-        .target-section {
-            display: none;
+        /* Phần nhóm khối như "SALE Summary", "Custom Tags", "Start Date" */
+        .summary-box {
+            border: 1px solid #e1e3e5;
+            border-radius: 8px;
+            background: #f9fafb;
+            padding: 15px;
+            margin-bottom: 20px;
         }
 
-        .target-section.active {
-            display: block;
+        .summary-box h5 {
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 10px;
+            color: #212b36;
         }
 
+        /* Các input datetime */
         .datetime-picker {
-            width: 100%;
+            border-radius: 6px;
+        }
+
+        /* Select2 sửa giao diện giống Shopify */
+        .select2-container--default .select2-selection--multiple {
+            background-color: #fff;
+            border: 1px solid #c4cdd5;
+            border-radius: 6px;
+            cursor: text;
+            min-height: 38px;
+            padding: 2px 5px;
+        }
+
+        .select2-container--default .select2-selection--multiple .select2-selection__choice {
+            background-color: #f4f6f8;
+            border: 1px solid #dfe3e8;
+            color: #212b36;
+            padding: 3px 8px;
+            border-radius: 6px;
+            margin-top: 4px;
+        }
+
+        .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+            color: #919eab;
+            margin-right: 5px;
+            font-weight: bold;
+        }
+
+        /* Thẻ Add Tag */
+        #tags_to_add {
+            background-color: #f9fafb;
+        }
+
+        /* Responsive fix */
+        @media (max-width: 768px) {
+
+            .form-group.col-md-6,
+            .form-group.col-md-3 {
+                width: 100%;
+            }
         }
     </style>
+
     <!-- Thêm jQuery trước Select2 và script custom -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>

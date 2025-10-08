@@ -1,45 +1,38 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="vi">
 
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta charset="UTF-8">
     <title>Đang chuyển hướng...</title>
+    <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
 </head>
 
 <body>
-    <div style="padding:20px;text-align:center;">Đang chuyển hướng trong ứng dụng Shopify...</div>
+    <p style="text-align: center; margin-top: 100px;">
+        Đang chuyển hướng trong ứng dụng Shopify...
+    </p>
 
-    <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
     <script>
-        (function () {
-            const redirectUrl = "{{ $redirect }}";
-            const params = new URLSearchParams(window.location.search);
-            const host = params.get("host") || "{{ request('host') ?? session('shopify_host') }}";
+        document.addEventListener("DOMContentLoaded", () => {
+            const apiKey = "{{ config('shopify.api_key') }}";
+            const host = "{{ request('host') ?? $host ?? session('shopify_host') }}";
+            const redirectUrl = `{!! $redirect !!}`;
 
-            // Đảm bảo luôn có host trong redirectUrl
-            const finalUrl = redirectUrl.includes("host=")
-                ? redirectUrl
-                : redirectUrl + (redirectUrl.includes("?") ? "&" : "?") + "host=" + encodeURIComponent(host);
-
-            if (window.top !== window.self) {
-                // Nếu đang trong iframe (bên trong Shopify admin)
-                const AppBridge = window["app-bridge"];
-                const createApp = AppBridge.default;
-                const { Redirect } = AppBridge.actions;
-
-                const app = createApp({
-                    apiKey: "{{ config('shopify-app.api_key') }}", // ✅ sửa ở đây
-                    host: host,
-                    forceRedirect: true,
-                });
-
-                Redirect.create(app).dispatch(Redirect.Action.APP, finalUrl);
-            } else {
-                // Nếu đang ngoài iframe (bị pop out)
-                window.location.href = finalUrl;
+            if (!apiKey || !host) {
+                console.error("❌ Thiếu apiKey hoặc host:", { apiKey, host });
+                window.location.href = redirectUrl; // fallback ngoài iframe
+                return;
             }
-        })();
+
+            const app = window.ShopifyAppBridge.createApp({ apiKey, host });
+            const Redirect = window.ShopifyAppBridge.actions.Redirect.create(app);
+
+            console.log("✅ Redirecting to:", redirectUrl);
+            Redirect.dispatch(
+                window.ShopifyAppBridge.actions.Redirect.Action.APP,
+                redirectUrl
+            );
+        });
     </script>
 </body>
 

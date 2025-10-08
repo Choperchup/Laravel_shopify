@@ -26,30 +26,67 @@ class RulesGraphQLController extends Controller
         $query = Rule::query();
         $tab = $request->tab ?? 'main';
 
+        // Tab: main / archived
         if ($tab === 'archived') {
             $query->whereNotNull('archived_at');
         } else {
             $query->whereNull('archived_at');
         }
 
-        // Bộ lọc
-        if ($search = $request->search) $query->where('name', 'like', "%$search%");
-        if ($status = $request->status) {
-            // Tùy chỉnh filter theo status
+        // Filter: search by name
+        if ($search = $request->search) {
+            $query->where('name', 'like', "%$search%");
         }
-        if ($applyTo = $request->apply_to) $query->where('apply_to_type', $applyTo);
-        if ($discountType = $request->discount_type) $query->where('discount_type', $discountType);
-        if ($minValue = $request->min_discount) $query->where('discount_value', '>=', $minValue);
-        if ($maxValue = $request->max_discount) $query->where('discount_value', '<=', $maxValue);
-        if ($startFrom = $request->start_from) $query->where('start_at', '>=', $startFrom);
-        if ($startTo = $request->start_to) $query->where('start_at', '<=', $startTo);
 
-        // Sắp xếp
-        $sort = $request->sort ?? 'name';
-        $dir = $request->dir ?? 'asc';
-        $query->orderBy($sort, $dir);
+        // Filter: status
+        if ($status = $request->status) {
+            if ($status === 'active') {
+                $query->where('active', true);
+            } elseif ($status === 'inactive') {
+                $query->where('active', false);
+            }
+        }
 
-        $rules = $query->paginate(10);
+        // Filter: apply_to_type
+        if ($applyTo = $request->apply_to) {
+            $query->where('apply_to_type', $applyTo);
+        }
+
+        // Filter: discount_type
+        if ($discountType = $request->discount_type) {
+            $query->where('discount_type', $discountType);
+        }
+
+        // Filter: start / end date
+        if ($startDate = $request->start_date) {
+            $query->whereDate('start_at', '>=', $startDate);
+        }
+        if ($endDate = $request->end_date) {
+            $query->whereDate('end_at', '<=', $endDate);
+        }
+
+        // Sort
+        $sort = $request->sort ?? 'name_asc';
+        switch ($sort) {
+            case 'name_asc':
+                $query->orderBy('name', 'asc');
+                break;
+            case 'name_desc':
+                $query->orderBy('name', 'desc');
+                break;
+            case 'start_asc':
+                $query->orderBy('start_at', 'asc');
+                break;
+            case 'start_desc':
+                $query->orderBy('start_at', 'desc');
+                break;
+            default:
+                $query->orderBy('name', 'asc');
+                break;
+        }
+
+        // Pagination giữ query string để filter vẫn còn khi chuyển trang
+        $rules = $query->paginate(10)->withQueryString();
 
         Log::info('Query conditions: ', [
             'sql' => $query->toSql(),
@@ -59,6 +96,7 @@ class RulesGraphQLController extends Controller
 
         return view('rules.index', compact('rules', 'tab'));
     }
+
 
     public function create()
     {
@@ -157,20 +195,37 @@ class RulesGraphQLController extends Controller
         }
 
         $rule->update($validatedData);
+
         // Lấy host/shop từ request hoặc session
         $host = $request->get('host') ?? session('shopify_host');
         $shop = $request->get('shop') ?? session('shopify_shop');
 
+        // URL quay lại trang index
+        $redirectUrl = route('rules.index', ['tab' => 'main', 'host' => $host, 'shop' => $shop]);
+
+        // Nếu request là AJAX → trả JSON để JS xử lý
         if ($request->ajax()) {
             return response()->json([
                 'success' => true,
                 'message' => 'Quy tắc đã được cập nhật',
-                'redirect' => null, // hoặc route nếu bạn muốn reload bảng
+                'redirect' => $redirectUrl,
             ]);
         }
 
-        return back()->with('success', 'Quy tắc đã được cập nhật');
+        // Nếu có host → render view redirect trong iframe (giống restore)
+        if ($host && $shop) {
+            return response()
+                ->view('shared.app-bridge-redirect', [
+                    'redirect' => $redirectUrl,
+                    'host' => $host
+                ])
+                ->header('X-Frame-Options', 'ALLOWALL');
+        }
+
+        // Fallback ngoài Shopify iframe
+        return redirect($redirectUrl)->with('success', 'Quy tắc đã được cập nhật');
     }
+
 
     public function toggle(Rule $rule)
     {
@@ -194,11 +249,40 @@ class RulesGraphQLController extends Controller
         return back();
     }
 
-    public function restore(Rule $rule)
+    public function restore(Request $request, Rule $rule)
     {
+        Log::debug('🧠 Restore request', [
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            'host' => $request->get('host'),
+            'shop' => $request->get('shop'),
+        ]);
+
         $rule->update(['archived_at' => null]);
-        return back();
+
+        $host = $request->get('host') ?? session('shopify_host');
+        $shop = $request->get('shop') ?? session('shopify_shop');
+        $redirectUrl = route('rules.index', ['tab' => 'archived', 'host' => $host, 'shop' => $shop]);
+
+        // Nếu request là AJAX → trả JSON
+        if ($request->ajax()) {
+            return response()->json(['success' => true, 'redirect' => $redirectUrl]);
+        }
+
+        // Nếu có host → render view redirect trong iframe
+        if ($host && $shop) {
+            return response()
+                ->view('shared.app-bridge-redirect', [
+                    'redirect' => $redirectUrl,
+                    'host' => $host
+                ])
+                ->header('X-Frame-Options', 'ALLOWALL'); // ⚡ Cho phép nhúng trong iframe Shopify
+        }
+
+        // Trường hợp fallback
+        return redirect($redirectUrl)->with('success', 'Đã khôi phục quy tắc');
     }
+
 
     public function destroy(Rule $rule)
     {

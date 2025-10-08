@@ -7,6 +7,7 @@
     <title>My Rules</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
+        /* ========== STATUS BADGES ========== */
         .status-active {
             background-color: #d4edda;
             color: #155724;
@@ -36,6 +37,7 @@
             border-radius: 4px;
         }
 
+        /* ========== TABLE ========== */
         .table thead th {
             white-space: nowrap;
             vertical-align: middle;
@@ -51,7 +53,56 @@
             align-items: center;
             gap: 10px;
         }
+
+        /* ========== PAGINATION FIX ========== */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 5px;
+            margin-top: 20px;
+        }
+
+        .pagination .page-link {
+            color: #0d6efd;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            padding: 6px 12px;
+        }
+
+        .pagination .page-item.active .page-link {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+            color: #fff;
+        }
+
+        .pagination .page-link:hover {
+            background-color: #e9ecef;
+            color: #0a58ca;
+        }
+
+        /* ✅ FIX icon quá to */
+        .pagination svg,
+        .pagination i {
+            width: 1em !important;
+            height: 1em !important;
+            font-size: 1rem !important;
+            vertical-align: middle;
+        }
+
+        /* Giới hạn icon nếu có svg render ra */
+        svg {
+            width: auto;
+            height: auto;
+            max-width: 16px;
+            max-height: 16px;
+        }
+
+        .relative.z-0.inline-flex.rtl\:flex-row-reverse.shadow-sm.rounded-md {
+            display: none !important;
+        }
     </style>
+
 </head>
 
 <body>
@@ -82,12 +133,103 @@
                 <form method="GET"
                     action="{{ route('rules.index', ['host' => request('host'), 'shop' => request('shop')]) }}"
                     class="d-flex">
+
+                    <input type="hidden" name="tab" value="{{ $tab }}"> <!-- giữ tab hiện tại -->
+                    <!-- Search box -->
                     <input type="text" name="search" value="{{ request('search') }}"
                         class="form-control form-control-sm" placeholder="Search Rule..." style="width:200px;">
+                    <!-- Apply button -->
                     <button class="btn btn-outline-secondary btn-sm ms-2" type="submit">
                         <i class="bi bi-search"></i>
                     </button>
                 </form>
+                <!-- Filter dropdown -->
+                <form method="GET" action="{{ route('rules.index') }}">
+                    <!-- Filter dropdown -->
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
+                            id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-funnel"></i> Filter
+                        </button>
+
+                        <!-- Nội dung filter -->
+                        <div class="dropdown-menu p-3" style="min-width: 280px;">
+
+                            <!-- Status -->
+                            <div class="mb-2">
+                                <label class="form-label form-label-sm mb-1">Status</label>
+                                <select name="status" class="form-select form-select-sm">
+                                    <option value="">All</option>
+                                    <option value="active" {{ request('status') == 'active' ? 'selected' : '' }}>Active
+                                    </option>
+                                    <option value="inactive" {{ request('status') == 'inactive' ? 'selected' : '' }}>
+                                        Inactive</option>
+                                </select>
+                            </div>
+
+                            <!-- Apply To -->
+                            <div class="mb-2">
+                                <label class="form-label form-label-sm mb-1">Apply To</label>
+                                <select name="apply_to" class="form-select form-select-sm">
+                                    <option value="">All</option>
+                                    <option value="products" {{ request('apply_to') == 'products' ? 'selected' : '' }}>
+                                        Products</option>
+                                    <option value="collections" {{ request('apply_to') == 'collections' ? 'selected' : '' }}>Collections</option>
+                                    <option value="tags" {{ request('apply_to') == 'tags' ? 'selected' : '' }}>Tags
+                                    </option>
+                                    <option value="vendors" {{ request('apply_to') == 'vendors' ? 'selected' : '' }}>
+                                        Vendors</option>
+                                </select>
+                            </div>
+
+                            <!-- Discount Type -->
+                            <div class="mb-2">
+                                <label class="form-label form-label-sm mb-1">Discount Type</label>
+                                <select name="discount_type" class="form-select form-select-sm">
+                                    <option value="">All</option>
+                                    <option value="percentage" {{ request('discount_type') == 'percentage' ? 'selected' : '' }}>Percentage</option>
+                                    <option value="fixed_amount" {{ request('discount_type') == 'fixed_amount' ? 'selected' : '' }}>Fixed</option>
+                                </select>
+                            </div>
+
+                            <!-- Start / End date -->
+                            <div class="mb-2">
+                                <label class="form-label form-label-sm mb-1">Start / End</label>
+                                <div class="d-flex gap-1">
+                                    <input type="date" name="start_date" value="{{ request('start_date') }}"
+                                        class="form-control form-control-sm">
+                                    <input type="date" name="end_date" value="{{ request('end_date') }}"
+                                        class="form-control form-control-sm">
+                                </div>
+                            </div>
+
+                            <!-- Sort -->
+                            <div class="mb-2">
+                                <label class="form-label form-label-sm mb-1">Sort</label>
+                                <select name="sort" class="form-select form-select-sm">
+                                    <option value="">Default</option>
+                                    <option value="name_asc" {{ request('sort') == 'name_asc' ? 'selected' : '' }}>Name ↑
+                                    </option>
+                                    <option value="name_desc" {{ request('sort') == 'name_desc' ? 'selected' : '' }}>Name
+                                        ↓</option>
+                                    <option value="start_asc" {{ request('sort') == 'start_asc' ? 'selected' : '' }}>Start
+                                        ↑</option>
+                                    <option value="start_desc" {{ request('sort') == 'start_desc' ? 'selected' : '' }}>
+                                        Start ↓</option>
+                                </select>
+                            </div>
+
+                            <!-- Submit -->
+                            <div class="text-end">
+                                <button class="btn btn-sm btn-primary" type="submit">
+                                    <i class="bi bi-check2"></i> Apply
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Refresh button -->
                 <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
@@ -118,13 +260,14 @@
                                 @endforeach
                             </td>
                             <td>
-                                <span class="
-                                                                @if(str_contains($rule->status_display, 'Hoạt động')) status-active
-                                                                @elseif(str_contains($rule->status_display, 'Bắt đầu')) status-future
-                                                                @elseif(str_contains($rule->status_display, 'Dừng')) status-past
-                                                                @elseif(str_contains($rule->status_display, 'Không hoạt động')) status-inactive
-                                                                @elseif(str_contains($rule->status_display, 'Đã lưu trữ')) status-archived
-                                                                @endif">
+                                <span
+                                    class="
+                                                                                                                                                                                                                                                @if(str_contains($rule->status_display, 'Hoạt động')) status-active
+                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Bắt đầu')) status-future
+                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Dừng')) status-past
+                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Không hoạt động')) status-inactive
+                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Đã lưu trữ')) status-archived
+                                                                                                                                                                                                                                                @endif">
                                     {{ $rule->status_display }}
                                 </span>
                             </td>
@@ -156,13 +299,19 @@
 
                                     <a href="{{ route('rules.edit', ['rule' => $rule, 'host' => request('host'), 'shop' => request('shop')]) }}"
                                         class="btn btn-sm btn-info">✎</a>
-                                    <form action="{{ route('rules.archive', $rule) }}" method="POST" style="display:inline;">
+                                    <form
+                                        action="{{ route('rules.archive', ['rule' => $rule, 'host' => request('host'), 'shop' => request('shop')]) }}"
+                                        method="POST" style="display:inline;">
                                         @csrf
                                         <button type="submit" class="btn btn-sm btn-warning">⤵</button>
                                     </form>
                                 @else
-                                    <a href="{{ route('rules.restore', ['rule' => $rule, 'host' => request('host'), 'shop' => request('shop')]) }}"
-                                        class="btn btn-sm btn-secondary">↺</a>
+                                    <form
+                                        action="{{ route('rules.restore', ['rule' => $rule, 'host' => request('host'), 'shop' => request('shop')]) }}"
+                                        method="POST" style="display:inline;">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-secondary">↺</button>
+                                    </form>
                                     <form action="{{ route('rules.destroy', $rule) }}" method="POST" style="display:inline;">
                                         @csrf
                                         @method('DELETE')

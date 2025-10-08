@@ -576,6 +576,14 @@ class ProductGraphQLService
     public function getMatchingVariants(User $shop, Rule $rule, bool $exclude = true): array
     {
         $variants = [];
+        // 🔧 Đảm bảo apply_to_targets và exclude_products là mảng
+        if (is_string($rule->apply_to_targets)) {
+            $rule->apply_to_targets = json_decode($rule->apply_to_targets, true) ?: [];
+        }
+        if (is_string($rule->exclude_products)) {
+            $rule->exclude_products = json_decode($rule->exclude_products, true) ?: [];
+        }
+
         if ($rule->apply_to_type === 'collections') {
             foreach ($rule->apply_to_targets ?? [] as $collId) {
                 $cursor = null;

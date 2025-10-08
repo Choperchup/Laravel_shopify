@@ -122,7 +122,11 @@
                         <button type="submit" class="btn btn-warning">Lưu trữ</button>
                     </form>
                 @else
-                    <a href="{{ route('rules.restore', $rule) }}" class="btn btn-secondary me-2">Khôi phục</a>
+                    <form action="{{ route('rules.restore', $rule) }}" method="POST" style="display:inline-block;">
+                        @csrf
+                        <button type="submit" class="btn btn-secondary me-2">Khôi phục</button>
+                    </form>
+
                     <form action="{{ route('rules.destroy', $rule) }}" method="POST" style="display:inline-block;">
                         @csrf
                         @method('DELETE')

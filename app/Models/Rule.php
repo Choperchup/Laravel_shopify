@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use App\Services\ProductGraphQLService;
 use Illuminate\Support\Str;
+use App\Models\User;
 
 class Rule extends Model
 {
@@ -33,11 +34,17 @@ class Rule extends Model
         'archived_at',
     ];
 
+    /**
+     * Quan hệ với RuleVariant
+     */
     public function ruleVariants()
     {
         return $this->hasMany(RuleVariant::class);
     }
 
+    /**
+     * Hiển thị trạng thái
+     */
     public function getStatusDisplayAttribute(): string
     {
         $now = Carbon::now();
@@ -48,6 +55,9 @@ class Rule extends Model
         return 'Hoạt động từ ' . ($this->start_at ? $this->start_at->format('h:i a, d M') : 'bây giờ');
     }
 
+    /**
+     * Hiển thị điều kiện áp dụng
+     */
     public function getConditionsDisplayAttribute(): array
     {
         $lines = [];
@@ -56,10 +66,13 @@ class Rule extends Model
         $applyToTargets = $this->normalizeToArray($this->apply_to_targets);
         $excludeProducts = $this->normalizeToArray($this->exclude_products);
 
+        // Lấy shop an toàn
+        $shop = $this->getShop();
+
         // Giảm giá
-        $discount = $this->discount_value . ($this->discount_type === 'percentage'
-            ? '%'
-            : ' ' . app(ProductGraphQLService::class)->getCurrency($this->getShop()));
+        $currency = $shop ? app(ProductGraphQLService::class)->getCurrency($shop) : '';
+        $discount = $this->discount_value
+            . ($this->discount_type === 'percentage' ? '%' : ' ' . $currency);
 
         $lines[] = 'Giảm giá: ' . $discount;
 
@@ -79,13 +92,11 @@ class Rule extends Model
     }
 
     /**
-     * Đảm bảo giá trị luôn trả về mảng.
+     * Đảm bảo giá trị luôn trả về mảng
      */
     private function normalizeToArray($value): array
     {
-        if (is_array($value)) {
-            return $value;
-        }
+        if (is_array($value)) return $value;
 
         if (is_string($value)) {
             $decoded = json_decode($value, true);
@@ -95,8 +106,16 @@ class Rule extends Model
         return [];
     }
 
-    protected function getShop(): User
+    /**
+     * Lấy shop hiện tại (an toàn, có thể null)
+     */
+    protected function getShop(): ?User
     {
-        return $this->getFirstShop(); // Hoặc từ session nếu bạn lưu shop ở đó
+        // Nếu lưu shop object hoặc user id trong session
+        if ($shopId = session('shopify_shop_id')) {
+            return User::find($shopId);
+        }
+
+        return null; // fallback an toàn
     }
 }
