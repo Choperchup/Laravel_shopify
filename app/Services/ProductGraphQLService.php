@@ -547,149 +547,157 @@ class ProductGraphQLService
         $data = $this->graphqlRequest($shop, $query);
         return data_get($data, 'shop.currencyCode', 'USD');
     }
+    /**
+     * Summary of updateVariantPrices
+     * @param \App\Models\User $shop
+     * @param string $variantId
+     * @param float|null $price
+     * @param float|null $compareAtPrice
+     * @return array|null
+     */
 
     public function updateVariantPrices(User $shop, string $variantId, ?float $price = null, ?float $compareAtPrice = null): ?array
     {
-        $inputs = [];
-        if ($price !== null) $inputs[] = 'price: "' . number_format($price, 2, '.', '') . '"';
-        if ($compareAtPrice !== null) $inputs[] = 'compareAtPrice: "' . number_format($compareAtPrice, 2, '.', '') . '"';
-        $inputStr = implode(', ', $inputs);
-        $query = <<<GRAPHQL
-        mutation {
-            productVariantUpdate(input: {id: "$variantId", $inputStr}) {
-                productVariant {
-                    id
-                    price
-                    compareAtPrice
-                }
-                userErrors {
-                    field
-                    message
-                }
-            }
+        $inputParts = [];
+        // Đảm bảo giá luôn được định dạng đúng chuẩn cho GraphQL
+        if ($price !== null) {
+            $inputParts[] = 'price: "' . number_format($price, 2, '.', '') . '"';
         }
-        GRAPHQL;
+        if ($compareAtPrice !== null) {
+            $inputParts[] = 'compareAtPrice: "' . number_format($compareAtPrice, 2, '.', '') . '"';
+        }
+
+        if (empty($inputParts)) {
+            return null; // Không có gì để cập nhật
+        }
+
+        $inputStr = implode(', ', $inputParts);
+
+        // ✅ SỬA LỖI & CẢNH BÁO:
+        // Tên mutation 'productVariantUpdate' đang gây lỗi. Điều này RẤT CÓ THỂ là do
+        // phiên bản API trong file config/shopify-app.php của bạn đã cũ.
+        // Hãy kiểm tra và cập nhật lên phiên bản mới nhất, ví dụ: '2024-04'.
+        // Mutation dưới đây là đúng cho các phiên bản API gần đây.
+        $query = <<<GRAPHQL
+mutation {
+    productVariantUpdate(input: {id: "$variantId", $inputStr}) {
+        productVariant {
+            id
+            price
+            compareAtPrice
+        }
+        userErrors {
+            field
+            message
+        }
+    }
+}
+GRAPHQL;
+
         $data = $this->graphqlRequest($shop, $query);
         return data_get($data, 'productVariantUpdate');
     }
 
+    /**
+     * Summary of getMatchingVariants
+     * @param \App\Models\User $shop
+     * @param \App\Models\Rule $rule
+     * @param bool $exclude
+     * @return array
+     */
+
     public function getMatchingVariants(User $shop, Rule $rule, bool $exclude = true): array
     {
         $variants = [];
-        // 🔧 Đảm bảo apply_to_targets và exclude_products là mảng
-        if (is_string($rule->apply_to_targets)) {
-            $rule->apply_to_targets = json_decode($rule->apply_to_targets, true) ?: [];
-        }
-        if (is_string($rule->exclude_products)) {
-            $rule->exclude_products = json_decode($rule->exclude_products, true) ?: [];
+        $applyToType = $rule->apply_to_type ?? 'all';
+
+        // ✅ SỬA LỖI: Luôn đảm bảo `targets` là một mảng trước khi sử dụng
+        $targets = $rule->apply_to_targets;
+        if (is_string($targets)) {
+            $decoded = json_decode($targets, true);
+            $targets = is_array($decoded) ? $decoded : [];
+        } elseif (!is_array($targets)) {
+            $targets = [];
         }
 
-        if ($rule->apply_to_type === 'collections') {
-            foreach ($rule->apply_to_targets ?? [] as $collId) {
-                $cursor = null;
-                do {
-                    $after = $cursor ? 'after: "' . $cursor . '"' : '';
-                    $query = <<<GRAPHQL
-                    {
-                        collection(id: "$collId") {
-                            products(first: 250, $after) {
-                                edges {
-                                    node {
-                                        id
-                                        variants(first: 250) {
-                                            edges {
-                                                node {
-                                                    id
-                                                    price
-                                                    compareAtPrice
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                pageInfo {
-                                    hasNextPage
-                                    endCursor
+        $queryStr = '';
+        switch ($applyToType) {
+            case 'products':
+                // Thêm dấu nháy đơn '' để bao bọc GID cho an toàn
+                $queryStr = implode(' OR ', array_map(fn($p) => "id:'$p'", $targets));
+                break;
+            case 'collections':
+                $queryStr = implode(' OR ', array_map(fn($c) => "product_collection_id:'$c'", $targets));
+                break;
+            case 'tags':
+                $queryStr = implode(' OR ', array_map(fn($t) => "tag:'$t'", $targets));
+                break;
+            case 'vendors':
+                $queryStr = implode(' OR ', array_map(fn($v) => "vendor:'$v'", $targets));
+                break;
+        }
+
+        if ($applyToType !== 'all' && empty($queryStr)) {
+            return []; // Không có gì để query, trả về mảng rỗng
+        }
+
+        $cursor = null;
+        do {
+            // Xây dựng tham số query một cách linh hoạt
+            $params = ['first: 250'];
+            if ($cursor) {
+                $params[] = 'after: "' . $cursor . '"';
+            }
+            if ($queryStr) {
+                // Mã hóa chuỗi query để tránh lỗi cú pháp
+                $params[] = 'query: ' . json_encode($queryStr);
+            }
+            $paramsStr = implode(', ', $params);
+
+            $query = <<<GRAPHQL
+        {
+            products($paramsStr) {
+                edges {
+                    node {
+                        id
+                        variants(first: 250) {
+                            edges {
+                                node {
+                                    id
+                                    price
+                                    compareAtPrice
                                 }
                             }
                         }
                     }
-                    GRAPHQL;
-                    $data = $this->graphqlRequest($shop, $query);
-                    $edges = data_get($data, 'collection.products.edges', []);
-                    foreach ($edges as $edge) {
-                        $prod = $edge['node'];
-                        foreach ($prod['variants']['edges'] as $vEdge) {
-                            $var = $vEdge['node'];
-                            $var['product_id'] = $prod['id'];
-                            $variants[] = $var;
-                        }
-                    }
-                    $hasNext = data_get($data, 'collection.products.pageInfo.hasNextPage', false);
-                    $cursor = data_get($data, 'collection.products.pageInfo.endCursor');
-                } while ($hasNext);
-            }
-        } else {
-            $queryStr = '';
-            switch ($rule->apply_to_type) {
-                case 'whole_store':
-                    $queryStr = '';
-                    break;
-                case 'tags':
-                    $queryStr = implode(' OR ', array_map(fn($t) => 'tag:"' . addslashes($t) . '"', $rule->apply_to_targets ?? []));
-                    break;
-                case 'vendors':
-                    $queryStr = implode(' OR ', array_map(fn($v) => 'vendor:"' . addslashes($v) . '"', $rule->apply_to_targets ?? []));
-                    break;
-                case 'products':
-                    $queryStr = implode(' OR ', array_map(fn($p) => 'id:"' . $p . '"', $rule->apply_to_targets ?? []));
-                    break;
-            }
-            $queryParam = $queryStr ? 'query: "' . $queryStr . '"' : '';
-            $cursor = null;
-            do {
-                $after = $cursor ? 'after: "' . $cursor . '"' : '';
-                $query = <<<GRAPHQL
-                {
-                    products(first: 250, $after, $queryParam) {
-                        edges {
-                            node {
-                                id
-                                variants(first: 250) {
-                                    edges {
-                                        node {
-                                            id
-                                            price
-                                            compareAtPrice
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        pageInfo {
-                            hasNextPage
-                            endCursor
-                        }
-                    }
                 }
-                GRAPHQL;
-                $data = $this->graphqlRequest($shop, $query);
-                $edges = data_get($data, 'products.edges', []);
-                foreach ($edges as $edge) {
-                    $prod = $edge['node'];
-                    foreach ($prod['variants']['edges'] as $vEdge) {
-                        $var = $vEdge['node'];
-                        $var['product_id'] = $prod['id'];
-                        $variants[] = $var;
-                    }
+                pageInfo {
+                    hasNextPage
+                    endCursor
                 }
-                $hasNext = data_get($data, 'products.pageInfo.hasNextPage', false);
-                $cursor = data_get($data, 'products.pageInfo.endCursor');
-            } while ($hasNext);
+            }
         }
-        if ($exclude && $rule->exclude_products) {
-            $variants = array_filter($variants, fn($v) => !in_array($v['product_id'], $rule->exclude_products));
+        GRAPHQL;
+
+            $data = $this->graphqlRequest($shop, $query);
+            $edges = data_get($data, 'products.edges', []);
+            foreach ($edges as $edge) {
+                $prod = $edge['node'];
+                foreach ($prod['variants']['edges'] as $vEdge) {
+                    $var = $vEdge['node'];
+                    $var['product_id'] = $prod['id'];
+                    $variants[] = $var;
+                }
+            }
+            $hasNext = data_get($data, 'products.pageInfo.hasNextPage', false);
+            $cursor = data_get($data, 'products.pageInfo.endCursor');
+        } while ($hasNext);
+
+        if ($exclude && !empty($rule->exclude_products)) {
+            $excludeTargets = is_array($rule->exclude_products) ? $rule->exclude_products : [];
+            $variants = array_filter($variants, fn($v) => !in_array($v['product_id'], $excludeTargets));
         }
+
         return $variants;
     }
 

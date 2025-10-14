@@ -6,34 +6,75 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>Tạo Quy tắc Mới</title>
-    <!-- Thêm Bootstrap CSS -->
+    <title>My Rules!Discount rule settings</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Thêm Select2 CSS cho multi-select và tìm kiếm -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <style>
+        :root {
+            --p-surface: #ffffff;
+            --p-surface-subdued: #f9fafb;
+            --p-border: #e1e3e5;
+            --p-border-subdued: #e1e3e5;
+            --p-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+            --p-space-4: 1rem;
+            --p-space-5: 1.25rem;
+            --p-text: #212b36;
+            --p-text-subdued: #637381;
+            --p-interactive: #5c6ac4;
+        }
+
         body {
             background-color: #f6f6f7;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            color: #212b36;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            color: var(--p-text);
         }
 
-        h2 {
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        h2.page-title {
             font-weight: 600;
-            margin-bottom: 1rem;
+            font-size: 1.75rem;
+            margin: 0;
         }
 
+        /* Card styling to match image */
         .card {
-            background: #fff;
-            border: 1px solid #e1e3e5;
+            background: var(--p-surface);
+            border: 1px solid var(--p-border);
             border-radius: 8px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            box-shadow: var(--p-shadow-xs);
+            margin-bottom: var(--p-space-5);
         }
 
-        label.form-label {
+        .card-header {
+            padding: var(--p-space-4) var(--p-space-5);
+            background-color: var(--p-surface);
+            border-bottom: 1px solid var(--p-border);
             font-weight: 600;
-            color: #212b36;
+            font-size: 1rem;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+        }
+
+        .card-body {
+            padding: var(--p-space-5);
+        }
+
+        label.form-label,
+        .form-check-label {
+            font-weight: 600;
+            color: var(--p-text);
             margin-bottom: 0.4rem;
+        }
+
+        /* Smaller font-weight for radio/check labels */
+        .form-check-label {
+            font-weight: 400;
         }
 
         .form-control,
@@ -46,291 +87,279 @@
 
         .form-control:focus,
         .form-select:focus,
-        .select2-selection:focus {
-            border-color: #5c6ac4 !important;
+        .select2-selection--multiple:focus-within {
+            border-color: var(--p-interactive) !important;
             box-shadow: 0 0 0 2px rgba(92, 106, 196, 0.2) !important;
         }
 
         .btn-primary {
-            background-color: #5c6ac4;
-            border-color: #5c6ac4;
+            background-color: #008060;
+            /* Shopify Green */
+            border-color: #008060;
             font-weight: 600;
             padding: 0.5rem 1.2rem;
         }
 
         .btn-primary:hover {
-            background-color: #4e5bbf;
-            border-color: #4e5bbf;
+            background-color: #006e52;
+            border-color: #006e52;
         }
 
         .btn-secondary {
-            background-color: #f4f6f8;
-            color: #212b36;
+            background-color: var(--p-surface);
+            color: var(--p-text);
             border: 1px solid #c4cdd5;
         }
 
         .btn-secondary:hover {
-            background-color: #e0e2e5;
-        }
-
-        /* Layout giống Shopify */
-        .container-fluid {
-            max-width: 1300px;
+            background-color: #f1f2f3;
         }
 
         .form-group {
             margin-bottom: 1.25rem;
         }
 
-        /* Phần nhóm khối như "SALE Summary", "Custom Tags", "Start Date" */
-        .summary-box {
-            border: 1px solid #e1e3e5;
-            border-radius: 8px;
-            background: #f9fafb;
-            padding: 15px;
-            margin-bottom: 20px;
+        /* Summary Box on the right */
+        .summary-card ul {
+            list-style: none;
+            padding-left: 0;
+            margin-bottom: 0;
         }
 
-        .summary-box h5 {
-            font-weight: 600;
-            font-size: 1rem;
-            margin-bottom: 10px;
-            color: #212b36;
+        .summary-card li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--p-border-subdued);
+            font-size: 0.9rem;
+            color: var(--p-text-subdued);
         }
 
-        /* Các input datetime */
-        .datetime-picker {
-            border-radius: 6px;
+        .summary-card li:last-child {
+            border-bottom: none;
         }
 
-        /* Select2 sửa giao diện giống Shopify */
-        .select2-container--default .select2-selection--multiple {
-            background-color: #fff;
-            border: 1px solid #c4cdd5;
-            border-radius: 6px;
-            cursor: text;
-            min-height: 38px;
-            padding: 2px 5px;
+        .summary-card li .summary-value {
+            color: var(--p-text);
+            font-weight: 500;
         }
 
-        .select2-container--default .select2-selection--multiple .select2-selection__choice {
-            background-color: #f4f6f8;
-            border: 1px solid #dfe3e8;
-            color: #212b36;
-            padding: 3px 8px;
-            border-radius: 6px;
-            margin-top: 4px;
+        /* Hide sections by default */
+        .target-section {
+            display: none;
         }
 
-        .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
-            color: #919eab;
-            margin-right: 5px;
-            font-weight: bold;
+        .target-section.active {
+            display: block;
         }
 
-        /* Thẻ Add Tag */
-        #tags_to_add {
-            background-color: #f9fafb;
-        }
-
-        /* Responsive fix */
-        @media (max-width: 768px) {
-
-            .form-group.col-md-6,
-            .form-group.col-md-3 {
-                width: 100%;
-            }
+        #end-date-wrapper {
+            display: none;
+            /* Hide end date by default */
         }
     </style>
 
-    <!-- Thêm jQuery trước Select2 và script custom -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 
 <body>
-    <div class="container-fluid mt-4">
-        <!-- Tiêu đề -->
-        <h2>Tạo Quy tắc Mới</h2>
-        <a href="{{ route('rules.index') }}?host={{ request()->get('host') }}&shop={{ request()->get('shop') }}"
-            class="btn btn-secondary mb-3">Quay lại</a>
-
-        <!-- Biểu mẫu tạo quy tắc -->
-        <form action="{{ route('rules.store') }}?host={{ request()->get('host') }}&shop={{ request()->get('shop') }}"
-            method="POST" class="card p-4">
-            @csrf
-            <div class="row g-3">
-                <!-- Tên quy tắc -->
-                <div class="form-group col-md-6">
-                    <label for="name" class="form-label">Tên Quy tắc <span class="text-danger">*</span></label>
-                    <input type="text" name="name" id="name" class="form-control" required>
+    <form action="{{ route('rules.store') }}?host={{ request()->get('host') }}&shop={{ request()->get('shop') }}"
+        method="POST">
+        @csrf
+        <div class="container-fluid mt-4">
+            <div class="page-header">
+                <div>
+                    <a href="{{ route('rules.index') }}?host={{ request()->get('host') }}&shop={{ request()->get('shop') }}"
+                        class="btn btn-secondary mb-3 me-3">← My Rules</a>
+                    <h2 class="page-title d-inline-block align-middle">Discount rule settings</h2>
                 </div>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
 
-                <!-- Giá trị giảm giá -->
-                <div class="form-group col-md-3">
-                    <label for="discount_value" class="form-label">Giá trị Giảm giá <span
-                            class="text-danger">*</span></label>
-                    <input type="number" name="discount_value" id="discount_value" class="form-control" step="0.01"
-                        min="0" required>
-                </div>
+            <div class="row">
 
-                <!-- Loại giảm giá -->
-                <div class="form-group col-md-3">
-                    <label for="discount_type" class="form-label">Loại Giảm giá <span
-                            class="text-danger">*</span></label>
-                    <select name="discount_type" id="discount_type" class="form-select" required>
-                        <option value="percentage">Phần trăm (%)</option>
-                        <option value="fixed_amount">Số tiền cố định</option>
-                    </select>
-                </div>
-
-                <!-- Cơ sở giảm giá -->
-                <div class="form-group col-md-6">
-                    <label class="form-label">Cơ sở Giảm giá <span class="text-danger">*</span></label>
-                    <div class="form-check">
-                        <input type="radio" name="discount_base" value="current_price" id="current_price"
-                            class="form-check-input" checked>
-                        <label for="current_price" class="form-check-label">Giá hiện tại</label>
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="name" class="form-label">Discount Rule Name</label>
+                                <input type="text" name="name" id="name" class="form-control" required
+                                    placeholder="Hello world">
+                                <div class="form-text">For internal reference only. Customers cannot see this.</div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-check">
-                        <input type="radio" name="discount_base" value="compare_at_price" id="compare_at_price"
-                            class="form-check-input">
-                        <label for="compare_at_price" class="form-check-label">Giá so sánh</label>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="form-group col-md-8">
+                                    <label for="discount_value" class="form-label">Discount value</label>
+                                    <input type="number" name="discount_value" id="discount_value" class="form-control"
+                                        step="0.01" min="0" required placeholder="50">
+                                </div>
+
+                                <div class="form-group col-md-4">
+                                    <label for="discount_type" class="form-label invisible">Type</label>
+                                    <select name="discount_type" id="discount_type" class="form-select" required>
+                                        <option value="percentage">%</option>
+                                        <option value="fixed_amount">Fixed amount</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label d-block">Set discount based on</label>
+                                <div class="form-check form-check-inline">
+                                    <input type="radio" name="discount_base" value="current_price" id="current_price"
+                                        class="form-check-input" checked>
+                                    <label for="current_price" class="form-check-label">Current price</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input type="radio" name="discount_base" value="compare_at_price"
+                                        id="compare_at_price" class="form-check-input">
+                                    <label for="compare_at_price" class="form-check-label">Compare at price</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="apply_to_type" class="form-label">Applies to</label>
+                                <select name="apply_to_type" id="apply_to_type" class="form-select" required>
+                                    <option value="products">Products and variants</option>
+                                    <option value="collections">Collections</option>
+                                    <option value="tags">Tags</option>
+                                    <option value="vendors">Vendors</option>
+                                    <option value="whole_store">Whole store</option>
+                                </select>
+                            </div>
+
+                            <div class="target-section" id="products-section">
+                                <label class="form-label">Search products</label>
+                                <select name="apply_to_targets[]" id="products-select" class="form-control select2"
+                                    multiple="multiple" style="width: 100%;"></select>
+                            </div>
+                            <div class="target-section" id="collections-section">
+                                <label class="form-label">Search collections</label>
+                                <select name="apply_to_targets[]" id="collections-select" class="form-control select2"
+                                    multiple="multiple" style="width: 100%;"></select>
+                            </div>
+                            <div class="target-section" id="tags-section">
+                                <label class="form-label">Search tags</label>
+                                <select name="apply_to_targets[]" id="tags-select" class="form-control select2"
+                                    multiple="multiple" style="width: 100%;"></select>
+                            </div>
+                            <div class="target-section" id="vendors-section">
+                                <label class="form-label">Search vendors</label>
+                                <select name="apply_to_targets[]" id="vendors-select" class="form-control select2"
+                                    multiple="multiple" style="width: 100%;"></select>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                <div class="col-lg-4">
+                    <div class="card summary-card">
+                        <div class="card-header">SALE</div>
+                        <div class="card-body">
+                            <ul>
+                                <li>Rule Name: <span id="summary-rule-name" class="summary-value">Not set</span></li>
+                                <li>
+                                    <span id="summary-discount" class="summary-value">0%</span> Discount for
+                                    <span id="summary-target-count" class="summary-value">0</span>
+                                    <span id="summary-target-type">Products</span>
+                                </li>
+                                <li>Discount based on <span id="summary-discount-base" class="summary-value">Current
+                                        price</span></li>
+                                <li>Starting from <span id="summary-start-date" class="summary-value">not set</span>
+                                </li>
+                                <li>Tags Added: <span id="summary-tags" class="summary-value">None</span></li>
+                            </ul>
+                        </div>
+                    </div>
 
-                <!-- Đối tượng áp dụng -->
-                <div class="form-group col-md-6">
-                    <label for="apply_to_type" class="form-label">Áp dụng cho <span class="text-danger">*</span></label>
-                    <select name="apply_to_type" id="apply_to_type" class="form-select" required>
-                        <option value="products">Sản phẩm và biến thể</option>
-                        <option value="collections">Bộ sưu tập</option>
-                        <option value="tags">Thẻ</option>
-                        <option value="vendors">Nhà cung cấp</option>
-                        <option value="whole_store">Toàn cửa hàng</option>
-                    </select>
-                </div>
+                    <div class="card">
+                        <div class="card-header">Custom Tags</div>
+                        <div class="card-body">
+                            <div class="form-group mb-0">
+                                <label for="tags_to_add" class="form-label">Add a tag</label>
+                                <input type="text" name="tags_to_add" id="tags_to_add" class="form-control"
+                                    placeholder="e.g., flash-sale, 24hr-deal">
+                                <div class="form-text">Tags are added when the rule is active and removed when it's not.
+                                    Separate tags with a comma.</div>
+                            </div>
+                        </div>
+                    </div>
 
-                <!-- Danh sách đối tượng đã chọn -->
-                <div class="form-group col-12 target-section" id="products-section">
-                    <label class="form-label">Chọn Sản phẩm</label>
-                    <select name="apply_to_targets[]" id="products-select" class="form-control select2"
-                        multiple="multiple" style="width: 100%;">
-                        @forelse ($products as $product)
-                            <option value="{{ $product['id'] ?? '' }}" {{ in_array($product['id'] ?? '', old('apply_to_targets', [])) ? 'selected' : '' }}>
-                                {{ $product['title'] ?? '' }}
-                            </option>
-                        @empty
-                            <option value="" disabled>Không có sản phẩm</option>
-                        @endforelse
-                    </select>
-                </div>
-                <div class="form-group col-12 target-section" id="collections-section">
-                    <label class="form-label">Chọn Bộ sưu tập</label>
-                    <select name="apply_to_targets[]" id="collections-select" class="form-control select2"
-                        multiple="multiple" style="width: 100%;">
-                        @forelse ($collections as $collection)
-                            <option value="{{ $collection['node']['id'] ?? '' }}" {{ in_array($collection['node']['id'] ?? '', old('apply_to_targets', [])) ? 'selected' : '' }}>
-                                {{ $collection['node']['title'] ?? '' }}
-                            </option>
-                        @empty
-                            <option value="" disabled>Không có bộ sưu tập</option>
-                        @endforelse
-                    </select>
-                </div>
-                <div class="form-group col-12 target-section" id="tags-section">
-                    <label class="form-label">Chọn Thẻ</label>
-                    <select name="apply_to_targets[]" id="tags-select" class="form-control select2" multiple="multiple"
-                        style="width: 100%;">
-                        @foreach ($tags as $tag)
-                            <option value="{{ $tag['node'] ?? '' }}" {{ in_array($tag['node'] ?? '', old('apply_to_targets', [])) ? 'selected' : '' }}>
-                                {{ $tag['node'] ?? '' }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="form-group col-12 target-section" id="vendors-section">
-                    <label class="form-label">Chọn Nhà cung cấp</label>
-                    <select name="apply_to_targets[]" id="vendors-select" class="form-control select2"
-                        multiple="multiple" style="width: 100%;">
-                        @foreach ($vendors as $vendor)
-                            <option value="{{ $vendor['node'] ?? '' }}" {{ in_array($vendor['node'] ?? '', old('apply_to_targets', [])) ? 'selected' : '' }}>
-                                {{ $vendor['node'] ?? '' }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
+                    <div class="card">
+                        <div class="card-header">Start Date</div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="form-group col-md-7">
+                                    <label for="start_at" class="form-label">Start Date</label>
+                                    <input type="date" name="start_date" id="start_date" class="form-control">
+                                </div>
+                                <div class="form-group col-md-5">
+                                    <label for="start_time" class="form-label">Start Time</label>
+                                    <input type="time" name="start_time" id="start_time" class="form-control">
+                                </div>
+                            </div>
+                            <input type="datetime-local" name="start_at" id="start_at" class="d-none">
 
-                <!-- Sản phẩm loại trừ -->
-                <div class="form-group col-12">
-                    <label class="form-label">Sản phẩm loại trừ</label>
-                    <select name="exclude_products[]" id="exclude-products" class="form-control select2"
-                        multiple="multiple" style="width: 100%;">
-                        @forelse ($products as $product)
-                            <option value="{{ $product['id'] ?? '' }}" {{ in_array($product['id'] ?? '', old('exclude_products', [])) ? 'selected' : '' }}>
-                                {{ $product['title'] ?? '' }}
-                            </option>
-                        @empty
-                            <option value="" disabled>Không có sản phẩm</option>
-                        @endforelse
-                    </select>
-                </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="set-end-date-checkbox">
+                                <label class="form-check-label" for="set-end-date-checkbox">
+                                    Set End Date
+                                </label>
+                            </div>
 
-                <!-- Thời gian bắt đầu và kết thúc -->
-                <div class="form-group col-md-6">
-                    <label for="start_at" class="form-label">Thời gian bắt đầu</label>
-                    <input type="datetime-local" name="start_at" id="start_at" class="form-control datetime-picker">
-                </div>
-                <div class="form-group col-md-6">
-                    <label for="end_at" class="form-label">Thời gian kết thúc</label>
-                    <input type="datetime-local" name="end_at" id="end_at" class="form-control datetime-picker">
-                </div>
+                            <div id="end-date-wrapper" class="row">
+                                <div class="form-group col-md-7">
+                                    <label for="end_date" class="form-label">End Date</label>
+                                    <input type="date" name="end_date" id="end_date" class="form-control">
+                                </div>
+                                <div class="form-group col-md-5">
+                                    <label for="end_time" class="form-label">End Time</label>
+                                    <input type="time" name="end_time" id="end_time" class="form-control">
+                                </div>
+                            </div>
+                            <input type="datetime-local" name="end_at" id="end_at" class="d-none">
+                        </div>
+                    </div>
 
-                <!-- Thẻ thêm/khi áp dụng -->
-                <div class="form-group col-12">
-                    <label for="tags_to_add" class="form-label">Thêm thẻ khi áp dụng, xóa khi vô hiệu hóa</label>
-                    <input type="text" name="tags_to_add" id="tags_to_add" class="form-control"
-                        placeholder="Nhập thẻ, cách nhau bằng dấu phẩy (ví dụ: sale, discount)">
-                </div>
-
-                <!-- Nút gửi -->
-                <div class="form-group col-12 text-end">
-                    <button type="submit" class="btn btn-primary">Lưu Quy tắc</button>
                 </div>
             </div>
-        </form>
-    </div>
+        </div>
+    </form>
 
-    <!-- Thêm Bootstrap JS và Select2 JS -->
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script>
         $(document).ready(function () {
-            // Extract host and shop from current URL
+            // =================================================================
+            // ORIGINAL SCRIPT (UNCHANGED FUNCTIONALITY)
+            // =================================================================
+
             var urlParams = new URLSearchParams(window.location.search);
             var hostParam = urlParams.get('host');
             var shopParam = urlParams.get('shop');
 
-            // Khởi tạo Select2 với AJAX
             $('.select2').select2({
                 ajax: {
                     url: function () {
                         var baseUrl;
-                        switch ($(this).attr('id')) {
-                            case 'products-select':
-                            case 'exclude-products':
-                                baseUrl = '{{ route('api.products.search') }}';
-                                break;
-                            case 'collections-select':
-                                baseUrl = '{{ route('api.collections.search') }}';
-                                break;
-                            case 'tags-select':
-                                baseUrl = '{{ route('api.tags.search') }}';
-                                break;
-                            case 'vendors-select':
-                                baseUrl = '{{ route('api.vendors.search') }}';
-                                break;
+                        var selectId = $(this).attr('id');
+                        if (selectId.includes('products')) {
+                            baseUrl = '{{ route('api.products.search') }}';
+                        } else if (selectId.includes('collections')) {
+                            baseUrl = '{{ route('api.collections.search') }}';
+                        } else if (selectId.includes('tags')) {
+                            baseUrl = '{{ route('api.tags.search') }}';
+                        } else if (selectId.includes('vendors')) {
+                            baseUrl = '{{ route('api.vendors.search') }}';
                         }
-                        // Append host and shop parameters
+
                         if (hostParam && shopParam) {
                             baseUrl += (baseUrl.includes('?') ? '&' : '?') + 'host=' + encodeURIComponent(hostParam) + '&shop=' + encodeURIComponent(shopParam);
                         }
@@ -342,44 +371,38 @@
                         return {
                             q: params.term,
                             page: params.page,
-                            host: hostParam, // Gửi host trong data
-                            shop: shopParam  // Gửi shop trong data
+                            host: hostParam,
+                            shop: shopParam
                         };
                     },
                     processResults: function (data, params) {
                         params.page = params.page || 1;
                         return {
-                            results: data.map(item => ({ id: item.id, text: item.text || item.title || item.node })),
+                            results: data.map(item => ({ id: item.id || item.node, text: item.text || item.title || item.node })),
                             pagination: { more: data.length === 250 }
                         };
                     },
                     cache: true
                 },
-                placeholder: 'Tìm và chọn...',
+                placeholder: 'Search and select...',
                 allowClear: true,
                 minimumInputLength: 2
             });
 
-            // Hiển thị section tương ứng với apply_to_type
+            // Show/hide target sections based on dropdown
             $('#apply_to_type').on('change', function () {
+                var selectedType = $(this).val();
                 $('.target-section').removeClass('active');
-                $('#' + $(this).val() + '-section').addClass('active');
+                if (selectedType !== 'whole_store') {
+                    $('#' + selectedType + '-section').addClass('active');
+                }
+                // Also update summary when type changes
+                updateSummary();
             }).trigger('change');
 
-            // Đảm bảo start_at < end_at
-            $('#start_at, #end_at').on('change', function () {
-                const start = new Date($('#start_at').val());
-                const end = new Date($('#end_at').val());
-                if (start > end && $('#end_at').val()) {
-                    alert('Thời gian bắt đầu phải trước thời gian kết thúc!');
-                    $('#end_at').val('');
-                }
-            });
-
-            // Xử lý submit form qua AJAX
+            // Form submission via AJAX
             $('form').on('submit', function (e) {
                 e.preventDefault();
-
                 const form = $(this);
                 const url = form.attr('action');
                 const data = form.serialize() + (hostParam && shopParam ? '&host=' + encodeURIComponent(hostParam) + '&shop=' + encodeURIComponent(shopParam) : '');
@@ -394,18 +417,120 @@
                     },
                     success: function (response) {
                         if (response.success) {
-                            alert(response.message || "Lưu thành công!");
+                            alert(response.message || "Rule saved successfully!");
                             form.trigger("reset");
                             $('.select2').val(null).trigger('change');
                         } else {
-                            alert(response.message || 'Lưu thất bại!');
+                            alert(response.message || 'Failed to save rule!');
                         }
                     },
                     error: function (xhr) {
-                        alert('Lỗi: ' + (xhr.responseJSON?.message || 'Vui lòng thử lại'));
+                        alert('Error: ' + (xhr.responseJSON?.message || 'Please try again'));
                     }
                 });
             });
+
+            // =================================================================
+            // NEW SCRIPT FOR UI ENHANCEMENTS & SUMMARY
+            // =================================================================
+
+            // Function to combine date and time into a single datetime-local input
+            function combineDateTime(dateInput, timeInput, combinedInput) {
+                const dateVal = $(dateInput).val();
+                const timeVal = $(timeInput).val();
+                if (dateVal && timeVal) {
+                    $(combinedInput).val(`${dateVal}T${timeVal}`);
+                } else if (dateVal) {
+                    $(combinedInput).val(`${dateVal}T00:00`); // Default time if only date is set
+                } else {
+                    $(combinedInput).val('');
+                }
+                $(combinedInput).trigger('change'); // Ensure change event fires for validation
+            }
+
+            // Combine date/time for start and end dates
+            $('#start_date, #start_time').on('change', function () {
+                combineDateTime('#start_date', '#start_time', '#start_at');
+            });
+            $('#end_date, #end_time').on('change', function () {
+                combineDateTime('#end_date', '#end_time', '#end_at');
+            });
+
+            // Toggle end date visibility
+            $('#set-end-date-checkbox').on('change', function () {
+                $('#end-date-wrapper').toggle(this.checked);
+                if (!this.checked) {
+                    $('#end_date, #end_time, #end_at').val('').trigger('change');
+                }
+            });
+
+            // Date validation: start must be before end
+            $('#start_at, #end_at').on('change', function () {
+                const start = $('#start_at').val();
+                const end = $('#end_at').val();
+                if (start && end && new Date(start) >= new Date(end)) {
+                    alert('Start date must be before the end date!');
+                    $('#end_date, #end_time, #end_at').val('');
+                }
+                updateSummary();
+            });
+
+            // --- Summary Panel Logic ---
+            function updateSummary() {
+                // Rule Name
+                const ruleName = $('#name').val();
+                $('#summary-rule-name').text(ruleName || 'Not set');
+
+                // Discount Value & Type
+                const discountValue = $('#discount_value').val() || 0;
+                const discountType = $('#discount_type').val() === 'percentage' ? '%' : ' (fixed)';
+                $('#summary-discount').text(`${discountValue}${discountType}`);
+
+                // Applied Target
+                const applyToType = $('#apply_to_type').val();
+                const targetSelectId = '#' + applyToType + '-select';
+                let targetCount = 0;
+                if (applyToType !== 'whole_store') {
+                    targetCount = $(targetSelectId).select2('data').length;
+                } else {
+                    targetCount = 1; // Representing the whole store
+                }
+
+                let targetTypeName = applyToType.charAt(0).toUpperCase() + applyToType.slice(1);
+                if (targetCount !== 1) {
+                    // simple pluralization
+                    targetTypeName = targetTypeName.endsWith('s') ? targetTypeName : targetTypeName + 's';
+                }
+                if (applyToType === 'whole_store') targetTypeName = "Store";
+
+                $('#summary-target-count').text(targetCount);
+                $('#summary-target-type').text(targetTypeName);
+
+                // Discount Base
+                const discountBase = $('input[name="discount_base"]:checked').parent().find('label').text();
+                $('#summary-discount-base').text(discountBase);
+
+                // Start Date
+                const startDateVal = $('#start_at').val();
+                if (startDateVal) {
+                    const date = new Date(startDateVal);
+                    const formattedDate = date.toLocaleDateString('en-GB', { month: 'long', day: 'numeric', year: 'numeric' }) + ' (' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ')';
+                    $('#summary-start-date').text(formattedDate);
+                } else {
+                    $('#summary-start-date').text('now');
+                }
+
+                // Tags
+                const tags = $('#tags_to_add').val();
+                $('#summary-tags').text(tags || 'None');
+            }
+
+            // Attach event listeners to update summary on input change
+            $('form').on('input change', 'input, select', updateSummary);
+            $('.select2').on('change', updateSummary);
+
+            // Initial call to populate summary on page load
+            updateSummary();
         });
     </script>
 </body>

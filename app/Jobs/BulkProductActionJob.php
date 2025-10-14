@@ -60,10 +60,16 @@ class BulkProductActionJob implements ShouldQueue
                     $service->updateProductStatus($this->shop, $id, $this->payload['status']);
                     break;
                 case 'add_tags':
-                    $service->addTags($this->shop, $id, $this->payload['tags']);
+                    $tags_to_add = $this->payload['tags'];
+                    // ✅ SỬA LỖI: Luôn đảm bảo đây là một mảng
+                    $tags_array = is_array($tags_to_add) ? $tags_to_add : [$tags_to_add];
+                    $service->addTags($this->shop, $id, $tags_array);
                     break;
                 case 'remove_tags':
-                    $service->removeTags($this->shop, $id, $this->payload['tags']);
+                    $tags_to_remove = $this->payload['tags'];
+                    // ✅ SỬA LỖI: Luôn đảm bảo đây là một mảng
+                    $tags_array = is_array($tags_to_remove) ? $tags_to_remove : [$tags_to_remove];
+                    $service->removeTags($this->shop, $id, $tags_array);
                     break;
                 case 'add_collection':
                     Log::info("➡️ Gọi addToCollection", [

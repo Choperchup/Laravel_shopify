@@ -146,6 +146,7 @@
                 <!-- Filter dropdown -->
                 <form method="GET" action="{{ route('rules.index') }}">
                     <!-- Filter dropdown -->
+                    <input type="hidden" name="tab" value="{{ $tab }}"> <!-- ✅ Giữ tab hiện tại -->
                     <div class="dropdown">
                         <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
                             id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -262,12 +263,12 @@
                             <td>
                                 <span
                                     class="
-                                                                                                                                                                                                                                                @if(str_contains($rule->status_display, 'Hoạt động')) status-active
-                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Bắt đầu')) status-future
-                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Dừng')) status-past
-                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Không hoạt động')) status-inactive
-                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Đã lưu trữ')) status-archived
-                                                                                                                                                                                                                                                @endif">
+                                                                                                                                                                                                                                                                @if(str_contains($rule->status_display, 'Hoạt động')) status-active
+                                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Bắt đầu')) status-future
+                                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Dừng')) status-past
+                                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Không hoạt động')) status-inactive
+                                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Đã lưu trữ')) status-archived
+                                                                                                                                                                                                                                                                @endif">
                                     {{ $rule->status_display }}
                                 </span>
                             </td>
@@ -304,6 +305,14 @@
                                         method="POST" style="display:inline;">
                                         @csrf
                                         <button type="submit" class="btn btn-sm btn-warning">⤵</button>
+                                    </form>
+
+                                    {{-- ✅ Thêm nút XÓA trực tiếp ở Main --}}
+                                    <form action="{{ route('rules.destroy', $rule) }}" method="POST" style="display:inline;">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-sm btn-danger"
+                                            onclick="return confirm('Bạn có chắc muốn xóa rule này?')">🗑</button>
                                     </form>
                                 @else
                                     <form

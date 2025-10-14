@@ -378,15 +378,13 @@ class RulesGraphQLController extends Controller
         $collections = $this->service->getCollections($shop);
 
         $results = [];
-        if ($collections && isset($collections['edges'])) {
-            foreach ($collections['edges'] as $edge) {
-                $node = $edge['node'];
-                if (!$request->q || stripos($node['title'], $request->q) !== false) {
-                    $results[] = [
-                        'id' => $node['id'],
-                        'text' => $node['title'],
-                    ];
-                }
+        foreach ($collections as $edge) { // ✅ Bỏ ['edges']
+            $node = $edge['node'];
+            if (!$request->q || stripos($node['title'], $request->q) !== false) {
+                $results[] = [
+                    'id' => $node['id'],
+                    'text' => $node['title'],
+                ];
             }
         }
 
@@ -400,18 +398,15 @@ class RulesGraphQLController extends Controller
         $tags = $this->service->getTags($shop);
 
         $results = [];
-        if ($tags && isset($tags['shop']['productTags']['edges'])) {
-            foreach ($tags['shop']['productTags']['edges'] as $edge) {
-                $node = $edge['node'];
-                if (!$request->q || stripos($node, $request->q) !== false) {
-                    $results[] = [
-                        'id' => $node,
-                        'text' => $node,
-                    ];
-                }
+        foreach ($tags as $edge) { // ✅ Bỏ phần ['shop']['productTags']['edges']
+            $node = $edge['node'];
+            if (!$request->q || stripos($node, $request->q) !== false) {
+                $results[] = [
+                    'id' => $node,
+                    'text' => $node,
+                ];
             }
         }
-
         return response()->json($results);
     }
 
