@@ -33,7 +33,7 @@ class BulkRestoreDiscountJob implements ShouldQueue
     public function handle(ProductGraphQLService $service): void
     {
         foreach ($this->ruleVariants as $rv) {
-            $update = $service->updateVariantPrices($this->shop, $rv->variant_id, $rv->original_price, $rv->original_compare_at_price);
+            $update = $service->updateVariantPrices($this->shop, $rv->product_id, $rv->variant_id, $rv->original_price, $rv->original_compare_at_price);
             if (empty($update['userErrors'])) {
                 $rv->delete();
             } else {

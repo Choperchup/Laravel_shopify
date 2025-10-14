@@ -28,42 +28,44 @@ class ProductGraphQLService
      * @param \App\Models\User $shop
      * @param string $query
      */
-    private function graphqlRequest(User $shop, string $query): ?array
+    // In: app/Services/ProductGraphQLService.php
+
+    private function graphqlRequest(User $shop, string $query, array $variables = null): ?array
     {
         $url   = $this->getGraphqlUrl($shop);
-        $token = $shop->password; // Ưu tiên access_token, fallback password
-        logger('🔎 GraphQL Request', ['url' => $url, 'token_exists' => !empty($token), 'query' => $query]);
+        $token = $shop->password;
+
+        // ✅ Chuẩn bị payload, có thể chứa biến
+        $payload = ['query' => $query];
+        if ($variables) {
+            $payload['variables'] = $variables;
+        }
+
+        logger('🔎 GraphQL Request', ['url' => $url, 'token_exists' => !empty($token), 'payload' => $payload]);
         try {
             $response = Http::withHeaders([
                 'X-Shopify-Access-Token' => $token,
                 'Content-Type'           => 'application/json',
-            ])->post($url, ['query' => $query]);
+            ])->post($url, $payload);
 
             if ($response->successful()) {
-
                 Log::debug("🔎 Shopify GraphQL Raw Response", [
-                    'query'  => $query,
+                    'payload'  => $payload,
                     'data' => $response->json('data'),
                     'status' => $response->status(),
-                    'body'   => $response->body(),
-
+                    'body' => $response->body(),
                 ]);
                 return $response->json('data');
             }
 
-            Log::error('GraphQL request failed', [
-                'url'    => $url,
+            Log::error("❌ Shopify GraphQL Error", [
                 'status' => $response->status(),
-                'body'   => $response->body(),
+                'body' => $response->body(),
+                'payload' => $payload,
             ]);
-        } catch (\Throwable $e) {
-            Log::error('GraphQL request exception', [
-                'url'     => $url,
-                'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
-            ]);
+        } catch (\Exception $e) {
+            Log::error('❌ Exception during GraphQL request', ['message' => $e->getMessage()]);
         }
-
         return null;
     }
 
@@ -556,47 +558,49 @@ class ProductGraphQLService
      * @return array|null
      */
 
-    public function updateVariantPrices(User $shop, string $variantId, ?float $price = null, ?float $compareAtPrice = null): ?array
+    public function updateVariantPrices(User $shop, string $productId, string $variantId, ?float $price = null, ?float $compareAtPrice = null): ?array
     {
-        $inputParts = [];
-        // Đảm bảo giá luôn được định dạng đúng chuẩn cho GraphQL
+        // ✅ Tạo mảng input cho variant
+        $variantInput = ['id' => $variantId];
         if ($price !== null) {
-            $inputParts[] = 'price: "' . number_format($price, 2, '.', '') . '"';
+            $variantInput['price'] = number_format($price, 2, '.', '');
         }
         if ($compareAtPrice !== null) {
-            $inputParts[] = 'compareAtPrice: "' . number_format($compareAtPrice, 2, '.', '') . '"';
+            $variantInput['compareAtPrice'] = number_format($compareAtPrice, 2, '.', '');
         }
 
-        if (empty($inputParts)) {
-            return null; // Không có gì để cập nhật
+        // Nếu không có gì để cập nhật (chỉ có ID), thì không làm gì cả
+        if (count($variantInput) <= 1) {
+            return null;
         }
 
-        $inputStr = implode(', ', $inputParts);
-
-        // ✅ SỬA LỖI & CẢNH BÁO:
-        // Tên mutation 'productVariantUpdate' đang gây lỗi. Điều này RẤT CÓ THỂ là do
-        // phiên bản API trong file config/shopify-app.php của bạn đã cũ.
-        // Hãy kiểm tra và cập nhật lên phiên bản mới nhất, ví dụ: '2024-04'.
-        // Mutation dưới đây là đúng cho các phiên bản API gần đây.
+        // ✅ Sử dụng mutation mới: productVariantsBulkUpdate
         $query = <<<GRAPHQL
-mutation {
-    productVariantUpdate(input: {id: "$variantId", $inputStr}) {
-        productVariant {
-            id
-            price
-            compareAtPrice
-        }
-        userErrors {
-            field
-            message
+    mutation productVariantsBulkUpdate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
+        productVariantsBulkUpdate(productId: \$productId, variants: \$variants) {
+            productVariants {
+                id
+                price
+                compareAtPrice
+            }
+            userErrors {
+                field
+                message
+            }
         }
     }
-}
-GRAPHQL;
+    GRAPHQL;
 
-        $data = $this->graphqlRequest($shop, $query);
-        return data_get($data, 'productVariantUpdate');
+        // ✅ Chuẩn bị biến để truyền vào query
+        $variables = [
+            'productId' => $productId,
+            'variants' => [$variantInput] // Truyền vào một mảng chứa variant cần cập nhật
+        ];
+
+        $data = $this->graphqlRequest($shop, $query, $variables);
+        return data_get($data, 'productVariantsBulkUpdate');
     }
+
 
     /**
      * Summary of getMatchingVariants
@@ -606,28 +610,31 @@ GRAPHQL;
      * @return array
      */
 
+    // In: app/Services/ProductGraphQLService.php
+
     public function getMatchingVariants(User $shop, Rule $rule, bool $exclude = true): array
     {
         $variants = [];
         $applyToType = $rule->apply_to_type ?? 'all';
 
-        // ✅ SỬA LỖI: Luôn đảm bảo `targets` là một mảng trước khi sử dụng
-        $targets = $rule->apply_to_targets;
-        if (is_string($targets)) {
-            $decoded = json_decode($targets, true);
-            $targets = is_array($decoded) ? $decoded : [];
-        } elseif (!is_array($targets)) {
-            $targets = [];
-        }
+        // Đảm bảo `targets` là một mảng
+        $targets = $rule->normalizeToArray($rule->apply_to_targets);
 
         $queryStr = '';
         switch ($applyToType) {
             case 'products':
-                // Thêm dấu nháy đơn '' để bao bọc GID cho an toàn
-                $queryStr = implode(' OR ', array_map(fn($p) => "id:'$p'", $targets));
+                // ✅ SỬA LỖI: Chỉ lấy phần số từ GID của sản phẩm
+                $numericIds = array_map(function ($gid) {
+                    return basename($gid); // Lấy phần cuối của chuỗi GID, ví dụ: "8173032374466"
+                }, $targets);
+                $queryStr = implode(' OR ', array_map(fn($id) => "id:$id", $numericIds));
                 break;
             case 'collections':
-                $queryStr = implode(' OR ', array_map(fn($c) => "product_collection_id:'$c'", $targets));
+                // ✅ SỬA LỖI: Chỉ lấy phần số từ GID của bộ sưu tập
+                $numericIds = array_map(function ($gid) {
+                    return basename($gid);
+                }, $targets);
+                $queryStr = implode(' OR ', array_map(fn($id) => "product_collection_id:$id", $numericIds));
                 break;
             case 'tags':
                 $queryStr = implode(' OR ', array_map(fn($t) => "tag:'$t'", $targets));
@@ -638,18 +645,17 @@ GRAPHQL;
         }
 
         if ($applyToType !== 'all' && empty($queryStr)) {
-            return []; // Không có gì để query, trả về mảng rỗng
+            return [];
         }
 
         $cursor = null;
         do {
-            // Xây dựng tham số query một cách linh hoạt
             $params = ['first: 250'];
             if ($cursor) {
                 $params[] = 'after: "' . $cursor . '"';
             }
             if ($queryStr) {
-                // Mã hóa chuỗi query để tránh lỗi cú pháp
+                // Sử dụng json_encode để đảm bảo chuỗi query an toàn
                 $params[] = 'query: ' . json_encode($queryStr);
             }
             $paramsStr = implode(', ', $params);
@@ -694,7 +700,7 @@ GRAPHQL;
         } while ($hasNext);
 
         if ($exclude && !empty($rule->exclude_products)) {
-            $excludeTargets = is_array($rule->exclude_products) ? $rule->exclude_products : [];
+            $excludeTargets = $rule->normalizeToArray($rule->exclude_products);
             $variants = array_filter($variants, fn($v) => !in_array($v['product_id'], $excludeTargets));
         }
 

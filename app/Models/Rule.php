@@ -91,12 +91,15 @@ class Rule extends Model
         return $lines;
     }
 
+
     /**
      * Đảm bảo giá trị luôn trả về mảng
      */
-    private function normalizeToArray($value): array
+    public function normalizeToArray($value): array
     {
-        if (is_array($value)) return $value;
+        if (is_array($value)) {
+            return $value;
+        }
 
         if (is_string($value)) {
             $decoded = json_decode($value, true);

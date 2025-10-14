@@ -48,7 +48,7 @@ class BulkApplyDiscountJob implements ShouldQueue
                 $newPrice = max(0, $base - $discountAmount);
                 $newCompare = $base;
             }
-            $update = $service->updateVariantPrices($this->shop, $var['id'], $newPrice, $newCompare);
+            $update = $service->updateVariantPrices($this->shop, $var['product_id'], $var['id'], $newPrice, $newCompare);
             if (empty($update['userErrors'])) {
                 RuleVariant::create([
                     'rule_id' => $this->rule->id,
