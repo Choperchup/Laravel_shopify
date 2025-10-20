@@ -16,7 +16,8 @@ class Rule extends Model
         'tags_to_add' => 'array',
         'start_at' => 'datetime',
         'end_at' => 'datetime',
-        'active' => 'boolean',
+        'archived_at' => 'datetime',
+        'is_enabled' => 'boolean', // Thêm dòng này
     ];
 
     protected $fillable = [
@@ -32,6 +33,14 @@ class Rule extends Model
         'tags_to_add',
         'active',
         'archived_at',
+
+        // === THÊM CÁC DÒNG NÀY VÀO ===
+        'is_enabled',
+        'status',
+        'processed_products',
+        'total_products',
+        'job_batch_id',
+        'activated_at',
     ];
 
     /**

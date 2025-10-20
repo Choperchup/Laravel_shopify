@@ -4,6 +4,7 @@ use App\Http\Controllers\ProductGraphQLController;
 use App\Http\Controllers\RulesGraphQLController;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Route;
+use App\Models\Rule;
 
 // Nhóm route của app
 Route::middleware(['ensure.host', 'ensure.hmac'])->group(function () {
@@ -77,3 +78,20 @@ Route::get('/products/bulk-action/status/{batchId}', function ($batchId) {
         'failed'   => $batch->hasFailures(),
     ]);
 });
+
+
+// Route này trả về dữ liệu JSON của một rule để JavaScript kiểm tra
+Route::get('/rules/{rule}/status-json', function (Rule $rule) {
+    $batch = $rule->job_batch_id ? Bus::findBatch($rule->job_batch_id) : null;
+
+    if ($batch) {
+        // Cập nhật số sản phẩm đã xử lý từ batch job
+        $rule->update(['processed_products' => $batch->processedJobs()]);
+    }
+    return response()->json($rule->fresh());
+})->name('rules.status.json');
+
+// Route này trả về HTML của riêng ô trạng thái để cập nhật giao diện
+Route::get('/rules/{rule}/status-display', function (Rule $rule) {
+    return view('rules.partials._status_display', ['rule' => $rule->fresh()]);
+})->name('rules.status.display');

@@ -32,13 +32,35 @@ class BulkRestoreDiscountJob implements ShouldQueue
 
     public function handle(ProductGraphQLService $service): void
     {
+        Log::info("🔄 [BulkRestoreDiscountJob] Bắt đầu khôi phục giá cho rule ID {$this->rule->id}");
+
         foreach ($this->ruleVariants as $rv) {
-            $update = $service->updateVariantPrices($this->shop, $rv->product_id, $rv->variant_id, $rv->original_price, $rv->original_compare_at_price);
-            if (empty($update['userErrors'])) {
-                $rv->delete();
-            } else {
-                Log::error('Khôi phục biến thể thất bại', ['errors' => $update['userErrors']]);
+            try {
+                // ✅ Nếu original_compare_at_price NULL, chỉ cập nhật lại price thôi
+                $update = $service->updateVariantPrices(
+                    $this->shop,
+                    $rv->product_id,
+                    $rv->variant_id,
+                    $rv->original_price,
+                    $rv->original_compare_at_price
+                );
+
+                // Kiểm tra phản hồi từ Shopify
+                if (empty($update['userErrors'])) {
+                    Log::info("✅ Khôi phục thành công variant {$rv->variant_id}");
+                    $rv->delete(); // Xóa record vì rule này đã được phục hồi xong
+                } else {
+                    $errorMessage = "❌ Lỗi khôi phục variant {$rv->variant_id}: " . json_encode($update['userErrors']);
+                    Log::error($errorMessage);
+                    throw new \Exception($errorMessage); // Thêm này để job fail nếu error
+                }
+            } catch (\Exception $e) {
+                Log::error("💥 Exception khi khôi phục variant {$rv->variant_id}: " . $e->getMessage());
             }
         }
+
+        // ✅ Sau khi hoàn tất, cập nhật rule status về INACTIVE
+        $this->rule->update(['status' => 'INACTIVE']);
+        Log::info("🟢 [BulkRestoreDiscountJob] Hoàn tất khôi phục cho rule ID {$this->rule->id}");
     }
 }

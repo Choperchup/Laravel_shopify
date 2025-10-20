@@ -7,6 +7,8 @@ use App\Jobs\BulkRestoreDiscountJob;
 use App\Jobs\BulkProductActionJob;
 use App\Models\Rule;
 use App\Models\User;
+use Carbon\Carbon;
+use App\Models\RuleVariant;
 use App\Services\ProductGraphQLService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Bus;
@@ -41,9 +43,11 @@ class RulesGraphQLController extends Controller
         // Filter: status
         if ($status = $request->status) {
             if ($status === 'active') {
-                $query->where('active', true);
+                // 'active' giờ đây bao gồm nhiều trạng thái
+                $query->whereIn('status', ['ACTIVE', 'ACTIVATING', 'PENDING_DEACTIVATION']);
             } elseif ($status === 'inactive') {
-                $query->where('active', false);
+                // 'inactive' cũng bao gồm nhiều trạng thái
+                $query->whereIn('status', ['INACTIVE', 'SCHEDULED', 'PENDING_ACTIVATION']);
             }
         }
 
@@ -230,23 +234,173 @@ class RulesGraphQLController extends Controller
     public function toggle(Rule $rule)
     {
         $shop = $this->service->getFirstShop();
-        if ($rule->active) {
-            $rule->active = false;
-            $rule->save();
-            $this->disableRule($shop, $rule);
-        } else {
-            $rule->active = true;
-            $rule->save();
-            $this->applyRule($shop, $rule);
+        $now = Carbon::now();
+
+        // Cập nhật trạng thái người dùng mong muốn (bật hoặc tắt)
+        $rule->is_enabled = !$rule->is_enabled;
+
+        $rule->save();
+
+        // === LOGIC KHI BẬT RULE (is_enabled = true) 
+        if ($rule->is_enabled) {
+            // Trường hợp 1: Rule đang trong thời gian hiệu lực -> Kích hoạt ngay
+            if ($rule->start_at <= $now && (!$rule->end_at || $rule->end_at >= $now)) {
+                $this->dispatchActivationJobs($shop, $rule);
+            }
+            // Trường hợp 2: Rule được hẹn giờ cho tương lai -> Chỉ đổi trạng thái
+            else if ($rule->start_at > $now) {
+                $rule->status = 'SCHEDULED';
+                $rule->save();
+            }
+            // Trường hợp 3: Rule đã hết hạn nhưng người dùng cố bật
+            else {
+                $rule->is_enabled = false; // Trả lại trạng thái tắt
+                $rule->status = 'INACTIVE';
+                $rule->save();
+                return back()->with('error', 'Quy tắc này đã hết hạn.');
+            }
         }
-        return back()->with('success', 'Quy tắc đã được chuyển đổi');
+        // === LOGIC KHI TẮT RULE (is_enabled = false)
+        else {
+            $this->dispatchDeactivationJobs($shop, $rule);
+        }
+
+        return back()->with('success', 'Trạng thái quy tắc đang được cập nhật...');
     }
+
+    /**
+     * MỚI: Chuẩn bị và đẩy một batch job để ÁP DỤNG GIẢM GIÁ.
+     */
+
+    public function dispatchActivationJobs(User $shop, Rule $rule): void
+    {
+        $rule->update(['status' => 'PENDING_ACTIVATION']);
+
+        $allVariants = $this->service->getMatchingVariants($shop, $rule);
+        $totalVariants = count($allVariants);
+
+        if ($totalVariants === 0) {
+            $rule->update(['status' => 'ACTIVE', 'total_products' => 0, 'activated_at' => now()]);
+            return;
+        }
+
+        $jobs = [];
+        $chunkSize = 50;
+        $variantChunks = array_chunk($allVariants, $chunkSize);
+
+        foreach ($variantChunks as $chunk) {
+            $jobs[] = new BulkApplyDiscountJob($shop, $rule, $chunk);
+        }
+
+        $ruleId = $rule->id; // Lấy ID ra một biến riêng
+
+        $batch = Bus::batch($jobs)
+            ->then(function () use ($ruleId) { // Chỉ sử dụng $ruleId ở đây
+                // Tìm lại Rule mới nhất từ DB bằng ID
+                $ruleToUpdate = Rule::find($ruleId);
+                if ($ruleToUpdate) {
+                    $ruleToUpdate->update([
+                        'status' => 'ACTIVE',
+                        'job_batch_id' => null,
+                        'activated_at' => now(),
+                    ]);
+                }
+            })
+            ->catch(function () use ($ruleId) { // Tương tự cho catch
+                $ruleToUpdate = Rule::find($ruleId);
+                if ($ruleToUpdate) {
+                    $ruleToUpdate->update(['status' => 'FAILED', 'job_batch_id' => null]);
+                }
+            })
+            ->name("Activate Rule ID: {$ruleId}")
+            ->dispatch();
+
+        $rule->update([
+            'job_batch_id' => $batch->id,
+            'total_products' => $totalVariants,
+            'processed_products' => 0,
+        ]);
+    }
+
+    /**
+     * MỚI: Chuẩn bị và đẩy một batch job để GỠ BỎ GIẢM GIÁ (revert).
+     */
+    public function dispatchDeactivationJobs(User $shop, Rule $rule, bool $deleteAfter = false): void
+    {
+        if ($rule->status !== 'DELETING') {
+            $rule->update(['status' => 'PENDING_DEACTIVATION']);
+        }
+
+        $appliedVariants = RuleVariant::where('rule_id', $rule->id)->get();
+        $totalVariants = $appliedVariants->count();
+
+        if ($totalVariants === 0) {
+            if ($deleteAfter) {
+                $rule->delete();
+            } else {
+                $rule->update(['status' => 'INACTIVE']);
+            }
+            return;
+        }
+
+        $jobs = [];
+        $chunkSize = 50;
+        $variantChunks = $appliedVariants->chunk($chunkSize);
+
+        foreach ($variantChunks as $chunk) {
+            $jobs[] = new \App\Jobs\BulkRestoreDiscountJob($shop, $rule, $chunk);
+        }
+
+        // === THAY ĐỔI QUAN TRỌNG: CHỈ TRUYỀN ID ===
+        $ruleId = $rule->id; // Lấy ID ra một biến riêng
+
+        $batch = Bus::batch($jobs)
+            ->then(function () use ($ruleId, $deleteAfter) { // Chỉ sử dụng $ruleId
+                // Tìm lại Rule mới nhất từ DB bằng ID
+                $ruleToUpdate = Rule::find($ruleId);
+                if ($ruleToUpdate) {
+                    if ($deleteAfter) {
+                        $ruleToUpdate->delete();
+                        Log::info("Rule ID: {$ruleToUpdate->id} đã được xóa sau khi revert giá thành công.");
+                    } else {
+                        $ruleToUpdate->update(['status' => 'INACTIVE', 'job_batch_id' => null]);
+                    }
+                }
+            })
+            ->catch(function () use ($ruleId) { // Tương tự cho catch
+                $ruleToUpdate = Rule::find($ruleId);
+                if ($ruleToUpdate) {
+                    $ruleToUpdate->update(['status' => 'FAILED', 'job_batch_id' => null]);
+                }
+            })
+            ->name("Deactivate Rule ID: {$ruleId} (Delete After: " . ($deleteAfter ? 'Yes' : 'No') . ")")
+            ->dispatch();
+
+        $rule->update([
+            'job_batch_id' => $batch->id,
+            'total_products' => $totalVariants,
+            'processed_products' => 0,
+        ]);
+    }
+
+    /**
+     * archive, restore, destroy, duplicate
+     */
 
     public function archive(Rule $rule)
     {
-        $rule->update(['archived_at' => now(), 'active' => false]);
-        $this->disableRule($this->service->getFirstShop(), $rule);
-        return back();
+        // 1. Cập nhật trạng thái lưu trữ
+        $rule->update([
+            'is_enabled' => false,      // Tắt ý định của người dùng
+            'archived_at' => now()
+        ]);
+
+        // 2. Nếu rule đang active, đẩy job vào queue để revert giá
+        if (in_array($rule->status, ['ACTIVE', 'ACTIVATING', 'PENDING_DEACTIVATION'])) {
+            $shop = $this->service->getFirstShop();
+            $this->dispatchDeactivationJobs($shop, $rule);
+        }
+        return back()->with('success', 'Quy tắc đã được lưu trữ.');
     }
 
     public function restore(Request $request, Rule $rule)
@@ -259,94 +413,48 @@ class RulesGraphQLController extends Controller
         ]);
 
         $rule->update(['archived_at' => null]);
-
+        // Giữ nguyên logic redirect của bạn
         $host = $request->get('host') ?? session('shopify_host');
         $shop = $request->get('shop') ?? session('shopify_shop');
-        $redirectUrl = route('rules.index', ['tab' => 'archived', 'host' => $host, 'shop' => $shop]);
-
-        // Nếu request là AJAX → trả JSON
-        if ($request->ajax()) {
-            return response()->json(['success' => true, 'redirect' => $redirectUrl]);
-        }
-
-        // Nếu có host → render view redirect trong iframe
-        if ($host && $shop) {
-            return response()
-                ->view('shared.app-bridge-redirect', [
-                    'redirect' => $redirectUrl,
-                    'host' => $host
-                ])
-                ->header('X-Frame-Options', 'ALLOWALL'); // ⚡ Cho phép nhúng trong iframe Shopify
-        }
-
-        // Trường hợp fallback
+        $redirectUrl = route('rules.index', ['tab' => 'main', 'host' => $host, 'shop' => $shop]);
         return redirect($redirectUrl)->with('success', 'Đã khôi phục quy tắc');
     }
 
 
     public function destroy(Rule $rule)
     {
-        $this->disableRule($this->service->getFirstShop(), $rule);
+        // Nếu rule đang active → revert giá trước khi xóa
+        if (in_array($rule->status, ['ACTIVE', 'ACTIVATING', 'PENDING_DEACTIVATION'])) {
+            $shop = $this->service->getFirstShop();
+
+            // Đẩy job với cờ deleteAfter = true
+            $this->dispatchDeactivationJobs($shop, $rule, deleteAfter: true);
+
+            return back()->with('success', 'Đang khôi phục giá sản phẩm trước khi xóa quy tắc...');
+        }
+
+        // Nếu rule đã inactive → xóa ngay
         $rule->delete();
-        return back();
+        return back()->with('success', 'Quy tắc đã được xóa.');
     }
 
     public function duplicate(Request $request, Rule $rule)
     {
         $dup = $rule->replicate();
         $dup->name = 'Bản sao của ' . $rule->name;
-        $dup->active = false;
+        // Đặt trạng thái mặc định cho rule mới
+        $dup->is_enabled = false;
+        $dup->status = 'INACTIVE';
+        $dup->job_batch_id = null;
         $dup->save();
 
-        // Lấy host và shop từ request hoặc session
         $host = $request->get('host') ?? session('shopify_host');
         $shop = $request->get('shop') ?? session('shopify_shop');
-
         return redirect()->route('rules.edit', [
             'rule' => $dup->id,
             'host' => $host,
             'shop' => $shop,
         ]);
-    }
-
-    protected function applyRule(User $shop, Rule $rule): void
-    {
-        if ($rule->ruleVariants()->exists()) return;
-
-        $variants = $this->service->getMatchingVariants($shop, $rule);
-        $batch = Bus::batch([])->name('Áp dụng Quy tắc ' . $rule->id)->dispatch();
-
-        $chunks = array_chunk($variants, 100);
-        foreach ($chunks as $chunk) {
-            $batch->add(new BulkApplyDiscountJob($shop, $rule, $chunk));
-        }
-
-        $productIds = array_unique(array_column($variants, 'product_id'));
-        if ($rule->tags_to_add) {
-            $batch->add(new BulkProductActionJob($shop, 'add_tags', $productIds, ['tags' => $rule->tags_to_add]));
-        }
-
-        Log::info('Áp dụng quy tắc', ['rule_id' => $rule->id]);
-    }
-
-    protected function disableRule(User $shop, Rule $rule): void
-    {
-        if (!$rule->ruleVariants()->exists()) return;
-
-        $batch = Bus::batch([])->name('Vô hiệu hóa Quy tắc ' . $rule->id)->dispatch();
-        $ruleVariants = $rule->ruleVariants;
-        $chunks = $ruleVariants->chunk(100);
-
-        foreach ($chunks as $chunk) {
-            $batch->add(new BulkRestoreDiscountJob($shop, $rule, $chunk));
-        }
-
-        $productIds = $ruleVariants->pluck('product_id')->unique()->toArray();
-        if ($rule->tags_to_add) {
-            $batch->add(new BulkProductActionJob($shop, 'remove_tags', $productIds, ['tags' => $rule->tags_to_add]));
-        }
-
-        Log::info('Vô hiệu hóa quy tắc', ['rule_id' => $rule->id]);
     }
 
     // API cho tìm kiếm sản phẩm

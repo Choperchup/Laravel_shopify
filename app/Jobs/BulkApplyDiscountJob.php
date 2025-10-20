@@ -58,7 +58,13 @@ class BulkApplyDiscountJob implements ShouldQueue
                     'original_compare_at_price' => $originalCompare,
                 ]);
             } else {
-                Log::error('Cập nhật biến thể thất bại', ['errors' => $update['userErrors']]);
+                // === SỬA LỖI QUAN TRỌNG NHẤT ===
+                $errorMessage = 'Lỗi khi cập nhật variant ID: ' . $var['id'] . ' - ' . json_encode($update['userErrors']);
+                Log::error($errorMessage);
+
+                // Báo cho Laravel biết là Job đã thất bại
+                throw new \Exception($errorMessage);
+                // ===============================
             }
         }
     }

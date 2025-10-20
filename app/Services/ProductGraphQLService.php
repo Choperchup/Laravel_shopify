@@ -560,38 +560,38 @@ class ProductGraphQLService
 
     public function updateVariantPrices(User $shop, string $productId, string $variantId, ?float $price = null, ?float $compareAtPrice = null): ?array
     {
-        // ✅ Tạo mảng input cho variant
+        // Tạo mảng input cho variant
         $variantInput = ['id' => $variantId];
+
+        // Luôn add 'price' nếu được cung cấp (price thường không null, nhưng để an toàn)
         if ($price !== null) {
             $variantInput['price'] = number_format($price, 2, '.', '');
         }
-        if ($compareAtPrice !== null) {
-            $variantInput['compareAtPrice'] = number_format($compareAtPrice, 2, '.', '');
-        }
 
-        // Nếu không có gì để cập nhật (chỉ có ID), thì không làm gì cả
-        if (count($variantInput) <= 1) {
-            return null;
-        }
+        // Luôn add 'compareAtPrice', ngay cả khi null (để xóa nếu null)
+        $variantInput['compareAtPrice'] = $compareAtPrice === null ? null : number_format($compareAtPrice, 2, '.', '');
 
-        // ✅ Sử dụng mutation mới: productVariantsBulkUpdate
+        // Không cần check count($variantInput) <=1 nữa, vì luôn có ít nhất id + compareAtPrice/price
+        // Nếu không có price/compareAt, có thể skip, nhưng trong restore/apply luôn có
+
+        // Sử dụng mutation: productVariantsBulkUpdate
         $query = <<<GRAPHQL
-    mutation productVariantsBulkUpdate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
-        productVariantsBulkUpdate(productId: \$productId, variants: \$variants) {
-            productVariants {
-                id
-                price
-                compareAtPrice
-            }
-            userErrors {
-                field
-                message
-            }
+mutation productVariantsBulkUpdate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
+    productVariantsBulkUpdate(productId: \$productId, variants: \$variants) {
+        productVariants {
+            id
+            price
+            compareAtPrice
+        }
+        userErrors {
+            field
+            message
         }
     }
-    GRAPHQL;
+}
+GRAPHQL;
 
-        // ✅ Chuẩn bị biến để truyền vào query
+        // Chuẩn bị biến để truyền vào query
         $variables = [
             'productId' => $productId,
             'variants' => [$variantInput] // Truyền vào một mảng chứa variant cần cập nhật

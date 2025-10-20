@@ -101,6 +101,17 @@
         .relative.z-0.inline-flex.rtl\:flex-row-reverse.shadow-sm.rounded-md {
             display: none !important;
         }
+
+        .status-processing,
+        .status-pending {
+            background-color: #0dcaf0;
+            color: white;
+        }
+
+        .status-failed {
+            background-color: #dc3545;
+            color: white;
+        }
     </style>
 
 </head>
@@ -246,13 +257,12 @@
                         <th>Rule Name</th>
                         <th>Conditions</th>
                         <th>Status</th>
-                        <th>Active</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach ($rules as $rule)
-                        <tr>
+                        <tr id="rule-row-{{ $rule->id }}" data-status="{{ $rule->status }}">
                             <td><input type="checkbox"></td>
                             <td>{{ $rule->name }}</td>
                             <td>
@@ -260,36 +270,22 @@
                                     {{ $line }}<br>
                                 @endforeach
                             </td>
-                            <td>
-                                <span
-                                    class="
-                                                                                                                                                                                                                                                                @if(str_contains($rule->status_display, 'Hoạt động')) status-active
-                                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Bắt đầu')) status-future
-                                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Dừng')) status-past
-                                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Không hoạt động')) status-inactive
-                                                                                                                                                                                                                                                                @elseif(str_contains($rule->status_display, 'Đã lưu trữ')) status-archived
-                                                                                                                                                                                                                                                                @endif">
-                                    {{ $rule->status_display }}
-                                </span>
-                            </td>
-                            <td>
-                                @if ($rule->active)
-                                    <form
-                                        action="{{ route('rules.toggle', ['rule' => $rule, 'host' => request('host'), 'shop' => request('shop')]) }}"
-                                        method="POST" style="display:inline;">
-                                        @csrf
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Turn off</button>
-                                    </form>
-                                @else
-                                    <form
-                                        action="{{ route('rules.toggle', ['rule' => $rule, 'host' => request('host'), 'shop' => request('shop')]) }}"
-                                        method="POST" style="display:inline;">
-                                        @csrf
-                                        <button type="submit" class="btn btn-sm btn-outline-success">Turn on</button>
-                                    </form>
-                                @endif
+                            <td class="status-cell">
+                                @include('rules.partials._status_display', ['rule' => $rule])
                             </td>
                             <td class="action-btns">
+                                {{-- NÚT TURN ON/OFF MỚI --}}
+                                <form
+                                    action="{{ route('rules.toggle', ['rule' => $rule, 'host' => request('host'), 'shop' => request('shop')]) }}"
+                                    method="POST" style="display:inline;">
+                                    @csrf
+                                    {{-- Logic mới dựa trên cột `is_enabled` --}}
+                                    @if ($rule->is_enabled)
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Turn off</button>
+                                    @else
+                                        <button type="submit" class="btn btn-sm btn-outline-success">Turn on</button>
+                                    @endif
+                                </form>
                                 @if ($tab === 'main')
                                     <form
                                         action="{{ route('rules.duplicate', ['rule' => $rule, 'host' => request('host'), 'shop' => request('shop')]) }}"
@@ -344,6 +340,50 @@
     <!-- Bootstrap Icons + JS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const pollStatuses = () => {
+                // Chỉ tìm những dòng có trạng thái cần cập nhật
+                document.querySelectorAll("tr[data-status*='PENDING'], tr[data-status*='ACTIVATING'], tr[data-status*='DEACTIVATING']").forEach(row => {
+                    const ruleId = row.id.split('-')[2];
+
+                    // === SỬA LỖI Ở ĐÂY: Xây dựng URL sạch ===
+                    const host = "{{ request('host') }}";
+                    const shop = "{{ request('shop') }}";
+                    const fetchUrl = `{{ url('/') }}/rules/${ruleId}/status-display?host=${host}&shop=${shop}`;
+                    // =======================================
+
+                    // Gọi tới route đã tạo ở web.php để lấy HTML mới nhất
+                    fetch(fetchUrl)
+                        .then(response => {
+                            if (!response.ok) {
+                                // Nếu gặp lỗi 404 hoặc lỗi server khác, ghi lại để dễ debug
+                                console.error(`Error fetching status for rule ${ruleId}: ${response.statusText}`);
+                                return ''; // Trả về chuỗi rỗng để không làm hỏng giao diện
+                            }
+                            return response.text();
+                        })
+                        .then(html => {
+                            if (html) {
+                                const statusCell = row.querySelector('.status-cell');
+                                if (statusCell) {
+                                    statusCell.innerHTML = html;
+                                    // Cập nhật lại data-status để script biết khi nào cần dừng polling
+                                    if (!html.includes('Chờ') && !html.includes('Đang')) {
+                                        row.removeAttribute('data-status');
+                                    }
+                                }
+                            }
+                        })
+                        .catch(error => console.error('Error polling status:', error));
+                });
+            };
+
+            // Bắt đầu polling, lặp lại mỗi 5 giây
+            setInterval(pollStatuses, 5000);
+        });
+    </script>
 </body>
 
 </html>
