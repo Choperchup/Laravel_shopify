@@ -238,13 +238,18 @@ class RulesGraphQLController extends Controller
 
         // Cập nhật trạng thái người dùng mong muốn (bật hoặc tắt)
         $rule->is_enabled = !$rule->is_enabled;
-
         $rule->save();
 
         // === LOGIC KHI BẬT RULE (is_enabled = true) 
         if ($rule->is_enabled) {
             // Trường hợp 1: Rule đang trong thời gian hiệu lực -> Kích hoạt ngay
             if ($rule->start_at <= $now && (!$rule->end_at || $rule->end_at >= $now)) {
+                // ✅ THÊM: ARCHIVE + PENDING_ACTIVATION
+                $rule->update([
+                    'status' => 'PENDING_ACTIVATION',
+                    'archived_at' => now()  // ✅ CHUYỂN SANG ARCHIVE TAB
+                ]);
+                Log::info("🔄 Toggle ON Rule #{$rule->id} → PENDING_ACTIVATION + ARCHIVED");
                 $this->dispatchActivationJobs($shop, $rule);
             }
             // Trường hợp 2: Rule được hẹn giờ cho tương lai -> Chỉ đổi trạng thái
@@ -254,15 +259,27 @@ class RulesGraphQLController extends Controller
             }
             // Trường hợp 3: Rule đã hết hạn nhưng người dùng cố bật
             else {
-                $rule->is_enabled = false; // Trả lại trạng thái tắt
-                $rule->status = 'INACTIVE';
-                $rule->save();
-                return back()->with('error', 'Quy tắc này đã hết hạn.');
+                // Giữ is_enabled = true, chỉ đổi trạng thái sang EXPIRED để UI biết rule được bật nhưng đã quá hạn
+                $rule->update([
+                    'status' => 'EXPIRED',
+                    'expired_at' => $rule->end_at
+                ]);
+
+                Log::info("⚠️ Toggle ON attempted on expired Rule #{$rule->id} (end_at: {$rule->end_at}). Marked as EXPIRED but kept is_enabled = true.");
+                // Revert giá do expiry nhưng giữ is_enabled = true
+                try {
+                    $this->dispatchDeactivationJobs($shop, $rule, true);
+                } catch (\Throwable $ex) {
+                    Log::error("Error dispatching expiry revert for Rule #{$rule->id}: " . $ex->getMessage());
+                }
+
+                return back()->with('warning', 'Quy tắc này đã hết hạn và được đánh dấu là EXPIRED (dừng từ ' . $rule->end_at . ').');
             }
         }
         // === LOGIC KHI TẮT RULE (is_enabled = false)
         else {
-            $this->dispatchDeactivationJobs($shop, $rule);
+            Log::info("🔄 Toggle OFF Rule #{$rule->id} → DEACTIVATING");
+            $this->dispatchDeactivationJobs($shop, $rule, false);
         }
 
         return back()->with('success', 'Trạng thái quy tắc đang được cập nhật...');
@@ -280,7 +297,13 @@ class RulesGraphQLController extends Controller
         $totalVariants = count($allVariants);
 
         if ($totalVariants === 0) {
-            $rule->update(['status' => 'ACTIVE', 'total_products' => 0, 'activated_at' => now()]);
+            $rule->update([
+                'status' => 'ACTIVE',
+                'total_products' => 0,
+                'activated_at' => now(),
+                'job_batch_id' => null
+            ]);
+            Log::info("✅ Rule #{$rule->id} ACTIVATED (0 variants)");
             return;
         }
 
@@ -304,12 +327,14 @@ class RulesGraphQLController extends Controller
                         'job_batch_id' => null,
                         'activated_at' => now(),
                     ]);
+                    Log::info("✅ Rule {$ruleId} ACTIVATED - Đã chuyển sang Archive tab");
                 }
             })
             ->catch(function () use ($ruleId) { // Tương tự cho catch
                 $ruleToUpdate = Rule::find($ruleId);
                 if ($ruleToUpdate) {
                     $ruleToUpdate->update(['status' => 'FAILED', 'job_batch_id' => null]);
+                    Log::error("❌ Rule #{$ruleId} ACTIVATION FAILED");
                 }
             })
             ->name("Activate Rule ID: {$ruleId}")
@@ -325,10 +350,11 @@ class RulesGraphQLController extends Controller
     /**
      * MỚI: Chuẩn bị và đẩy một batch job để GỠ BỎ GIẢM GIÁ (revert).
      */
-    public function dispatchDeactivationJobs(User $shop, Rule $rule, bool $deleteAfter = false): void
+    public function dispatchDeactivationJobs(User $shop, Rule $rule, bool $isExpiryRevert = false, bool $deleteAfter = false): void
     {
         if ($rule->status !== 'DELETING') {
-            $rule->update(['status' => 'PENDING_DEACTIVATION']);
+            $status = $isExpiryRevert ? 'ACTIVE' : 'PENDING_DEACTIVATION'; // ✅ GIỮ ACTIVE nếu expire
+            $rule->update(['status' => $status]);
         }
 
         $appliedVariants = RuleVariant::where('rule_id', $rule->id)->get();
@@ -337,8 +363,8 @@ class RulesGraphQLController extends Controller
         if ($totalVariants === 0) {
             if ($deleteAfter) {
                 $rule->delete();
-            } else {
-                $rule->update(['status' => 'INACTIVE']);
+            } else if (!$isExpiryRevert) {
+                $rule->update(['status' => 'INACTIVE']); //CHỈ INACTIVE nếu KHÔNG phải expire
             }
             return;
         }
@@ -348,14 +374,13 @@ class RulesGraphQLController extends Controller
         $variantChunks = $appliedVariants->chunk($chunkSize);
 
         foreach ($variantChunks as $chunk) {
-            $jobs[] = new \App\Jobs\BulkRestoreDiscountJob($shop, $rule, $chunk);
+            $jobs[] = new \App\Jobs\BulkRestoreDiscountJob($shop, $rule, $chunk, $isExpiryRevert);
         }
 
-        // === THAY ĐỔI QUAN TRỌNG: CHỈ TRUYỀN ID ===
         $ruleId = $rule->id; // Lấy ID ra một biến riêng
 
         $batch = Bus::batch($jobs)
-            ->then(function () use ($ruleId, $deleteAfter) { // Chỉ sử dụng $ruleId
+            ->then(function () use ($ruleId, $isExpiryRevert, $deleteAfter) { // Chỉ sử dụng $ruleId
                 // Tìm lại Rule mới nhất từ DB bằng ID
                 $ruleToUpdate = Rule::find($ruleId);
                 if ($ruleToUpdate) {
@@ -363,7 +388,12 @@ class RulesGraphQLController extends Controller
                         $ruleToUpdate->delete();
                         Log::info("Rule ID: {$ruleToUpdate->id} đã được xóa sau khi revert giá thành công.");
                     } else {
-                        $ruleToUpdate->update(['status' => 'INACTIVE', 'job_batch_id' => null]);
+                        $status = $isExpiryRevert ? 'ACTIVE' : 'INACTIVE'; // CHỈ INACTIVE nếu KHÔNG phải expire
+                        $ruleToUpdate->update([
+                            'status' => 'INACTIVE',
+                            'job_batch_id' => null
+                        ]);
+                        Log::info("Rule ID: {$ruleId} hoàn tất revert. Status: {$status}");
                     }
                 }
             })
@@ -373,7 +403,7 @@ class RulesGraphQLController extends Controller
                     $ruleToUpdate->update(['status' => 'FAILED', 'job_batch_id' => null]);
                 }
             })
-            ->name("Deactivate Rule ID: {$ruleId} (Delete After: " . ($deleteAfter ? 'Yes' : 'No') . ")")
+            ->name("Deactivate Rule ID: {$ruleId} (Expiry: " . ($isExpiryRevert ? 'Yes' : 'No') . ")")
             ->dispatch();
 
         $rule->update([
@@ -428,7 +458,7 @@ class RulesGraphQLController extends Controller
             $shop = $this->service->getFirstShop();
 
             // Đẩy job với cờ deleteAfter = true
-            $this->dispatchDeactivationJobs($shop, $rule, deleteAfter: true);
+            $this->dispatchDeactivationJobs($shop, $rule, false, deleteAfter: true);
 
             return back()->with('success', 'Đang khôi phục giá sản phẩm trước khi xóa quy tắc...');
         }

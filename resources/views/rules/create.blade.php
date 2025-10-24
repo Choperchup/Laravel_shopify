@@ -455,6 +455,7 @@
             $('#end_date, #end_time').on('change', function () {
                 combineDateTime('#end_date', '#end_time', '#end_at');
             });
+            
 
             // Toggle end date visibility
             $('#set-end-date-checkbox').on('change', function () {

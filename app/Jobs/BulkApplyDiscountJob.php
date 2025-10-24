@@ -67,5 +67,11 @@ class BulkApplyDiscountJob implements ShouldQueue
                 // ===============================
             }
         }
+
+        // --- ✅ Cập nhật tổng số sản phẩm đã áp dụng ---
+        $totalApplied = RuleVariant::where('rule_id', $this->rule->id)->count();
+        $this->rule->update(['total_product' => $totalApplied]);
+
+        Log::info("✅ Rule #{$this->rule->id} đã áp dụng giảm giá cho {$totalApplied} sản phẩm.");
     }
 }

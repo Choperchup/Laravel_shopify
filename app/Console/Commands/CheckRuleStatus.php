@@ -15,7 +15,6 @@ class CheckRuleStatus extends Command
 
     public function handle(RulesGraphQLController $rulesController): int
     {
-        // Lấy thời gian hiện tại theo đúng múi giờ đã cấu hình trong config/app.php
         $now = Carbon::now();
         $shop = User::first();
 
@@ -24,37 +23,54 @@ class CheckRuleStatus extends Command
             return 1;
         }
 
-        $this->info("Bắt đầu quét lúc: " . $now->toDateTimeString() . " (Múi giờ: " . $now->timezoneName . ")");
+        $this->info("🔍 Bắt đầu quét lúc: " . $now->format('H:i:s d/m/Y') . " (Tz: " . $now->timezoneName . ")");
 
-        // --- 1. Kích hoạt các rule đã được bật và đến giờ chạy ---
+
+        // --- 0. SẮP HẾT HẠN --- 
+        $soonToExpire = Rule::where('status', 'ACTIVE')
+            ->whereNotNull('end_at')
+            ->whereBetween('end_at', [$now, $now->copy()->addMinutes(5)]) // ⏱ trong 5 phút tới
+            ->get();
+
+        if ($soonToExpire->isNotEmpty()) {
+            $this->info("⚠️ Có {$soonToExpire->count()} quy tắc sắp hết hạn trong 5 phút:");
+            foreach ($soonToExpire as $rule) {
+                $remaining = $rule->end_at->diffForHumans($now, ['parts' => 2, 'short' => true]);
+                $this->info("   → Rule #{$rule->id}: {$rule->name} (hết hạn sau {$remaining})");
+            }
+        } else {
+            $this->info("🕐 Không có quy tắc nào sắp hết hạn trong 5 phút tới.");
+        }
+
+        // --- 1. KÍCH HOẠT (GIỮ NGUYÊN) ---
         $rulesToActivate = Rule::where('is_enabled', true)
             ->where('status', 'SCHEDULED')
-            ->where('start_at', '<=', $now) // So sánh bây giờ đã chính xác
+            ->where('start_at', '<=', $now)
             ->get();
 
         if ($rulesToActivate->isNotEmpty()) {
-            $this->info("Tìm thấy " . $rulesToActivate->count() . " quy tắc cần kích hoạt.");
+            $this->info("✅ Tìm thấy {$rulesToActivate->count()} quy tắc cần KÍCH HOẠT");
             foreach ($rulesToActivate as $rule) {
-                $this->info(" -> Đang xử lý Rule ID: {$rule->id}");
+                $this->info("   → Rule #{$rule->id}: {$rule->name}");
                 $rulesController->dispatchActivationJobs($shop, $rule);
             }
         }
 
-        // --- 2. Hủy kích hoạt các rule đã hết hạn ---
-        $rulesToExpire = Rule::whereIn('status', ['ACTIVE', 'ACTIVATING'])
+        // --- 2. EXPIRE (✅ SỬA: CHỈ ACTIVE) ---
+        $rulesToExpire = Rule::where('status', 'ACTIVE')  // ✅ CHỈ ACTIVE, KHÔNG ACTIVATING
             ->whereNotNull('end_at')
-            ->where('end_at', '<', $now) // So sánh bây giờ đã chính xác
+            ->where('end_at', '<', $now)
             ->get();
 
         if ($rulesToExpire->isNotEmpty()) {
-            $this->info("Tìm thấy " . $rulesToExpire->count() . " quy tắc đã hết hạn.");
+            $this->info("⏰ Tìm thấy {$rulesToExpire->count()} quy tắc EXPIRE");
             foreach ($rulesToExpire as $rule) {
-                $this->info(" -> Đang xử lý Rule ID: {$rule->id}");
-                $rulesController->dispatchDeactivationJobs($shop, $rule);
+                $this->info("   → Rule #{$rule->id}: {$rule->name} (end: " . $rule->end_at->format('H:i') . ")");
+                $rulesController->dispatchDeactivationJobs($shop, $rule, true);
             }
         }
 
-        $this->info('Hoàn tất việc quét.');
+        $this->info('✅ Hoàn tất quét.');
         return 0;
     }
 }
